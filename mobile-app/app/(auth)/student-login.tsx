@@ -14,6 +14,9 @@ export default function StudentLoginScreen() {
   const handleLogin = () => {
     // This will connect to your Node.js API later
     console.log("Student logging in with:", email, password);
+    
+    // Redirects the user to the student screen inside the new (student-tabs) folder
+    router.replace("/(student-tabs)/student-screen");
   };
 
   return (
@@ -84,9 +87,9 @@ export default function StudentLoginScreen() {
           <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
         </TouchableOpacity>
 
-        {/* Sign In Button */}
+        {/* Log In Button */}
         <TouchableOpacity style={styles.signInButton} onPress={handleLogin} activeOpacity={0.8}>
-          <Text style={styles.signInButtonText}>Sign In</Text>
+          <Text style={styles.signInButtonText}>Log In</Text>
         </TouchableOpacity>
 
         {/* Footer */}

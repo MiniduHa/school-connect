@@ -1,0 +1,72 @@
+import { Tabs } from "expo-router";
+import { FontAwesome6 } from "@expo/vector-icons";
+
+export default function TabsLayout() {
+  return (
+    <Tabs
+      screenOptions={{
+        headerShown: false, // Hides the default top header
+        tabBarActiveTintColor: "#2563EB", // The blue color from your mockup
+        tabBarInactiveTintColor: "#94A3B8", // The gray color for inactive tabs
+        tabBarStyle: {
+          backgroundColor: "#FFFFFF",
+          borderTopWidth: 1,
+          borderTopColor: "#E2E8F0",
+          height: 65,
+          paddingBottom: 10,
+          paddingTop: 10,
+        },
+        tabBarLabelStyle: {
+          fontSize: 10,
+          fontWeight: "bold",
+          marginTop: 4,
+        }
+      }}
+    >
+      {/* 1. HOME TAB (Maps to your student-screen.tsx) */}
+      <Tabs.Screen
+        name="student-screen"
+        options={{
+          title: "HOME",
+          tabBarIcon: ({ color }) => <FontAwesome6 name="house" size={20} color={color} />,
+        }}
+      />
+
+      {/* 2. GRADES TAB */}
+      <Tabs.Screen
+        name="grades"
+        options={{
+          title: "GRADES",
+          tabBarIcon: ({ color }) => <FontAwesome6 name="clipboard-list" size={20} color={color} />,
+        }}
+      />
+
+      {/* 3. CALENDAR TAB */}
+      <Tabs.Screen
+        name="calendar"
+        options={{
+          title: "Calendar", // Note: Your mockup has lowercase 'alendar' here
+          tabBarIcon: ({ color }) => <FontAwesome6 name="calendar" size={20} color={color} />,
+        }}
+      />
+
+      {/* 4. JOBS TAB */}
+      <Tabs.Screen
+        name="jobs"
+        options={{
+          title: "Jobs",
+          tabBarIcon: ({ color }) => <FontAwesome6 name="briefcase" size={20} color={color} />,
+        }}
+      />
+
+      {/* 5. PROFILE TAB */}
+      <Tabs.Screen
+        name="student-profile"
+        options={{
+          href: null, // <-- This magic line hides it from the bottom bar!
+          title: "PROFILE",
+        }}
+      />
+    </Tabs>
+  );
+}
