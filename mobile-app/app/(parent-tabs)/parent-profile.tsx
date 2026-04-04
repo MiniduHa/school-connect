@@ -10,11 +10,13 @@ import {
   Platform,
   Alert,
   Image,
-  Switch
+  Switch,
+  Linking,
+  BackHandler
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { FontAwesome6, Feather, MaterialCommunityIcons, Ionicons } from "@expo/vector-icons";
-import { useRouter, useLocalSearchParams } from "expo-router";
+import { useRouter, useLocalSearchParams, Stack } from "expo-router";
 import * as ImagePicker from 'expo-image-picker';
 
 export default function ParentProfileScreen() {
@@ -24,25 +26,26 @@ export default function ParentProfileScreen() {
   // --- DYNAMIC DATA ---
   const initialName = (params.full_name as string) || "Parent User";
   const initialEmail = (params.email as string) || "parent@schoolconnect.com";
+  const initialPhone = (params.phone_number as string) || "+94 77 123 4567";
   const child_ids = params.child_ids as string;
   const profile_photo_url = params.profile_photo_url as string;
 
   // --- STATE MANAGEMENT ---
   const [isEditing, setIsEditing] = useState(false);
   
-  // Display States (What shows in View Mode)
+  // Display States
   const [displayName, setDisplayName] = useState(initialName);
   const [displayEmail, setDisplayEmail] = useState(initialEmail);
-  const [displayPhone, setDisplayPhone] = useState("+94 77 123 4567");
+  const [displayPhone, setDisplayPhone] = useState(initialPhone);
   const [childrenList, setChildrenList] = useState<string[]>([]);
   const [currentPhotoUri, setCurrentPhotoUri] = useState<string | null>(null);
 
-  // Edit States (What shows in Edit Mode before saving)
+  // Edit States
   const [editName, setEditName] = useState(initialName);
   const [editEmail, setEditEmail] = useState(initialEmail);
-  const [editPhone, setEditPhone] = useState("+94 77 123 4567");
+  const [editPhone, setEditPhone] = useState(initialPhone);
   const [editChildrenList, setEditChildrenList] = useState<string[]>([]);
-  const [newChildId, setNewChildId] = useState(""); // For adding a new child
+  const [newChildId, setNewChildId] = useState(""); 
   const [originalPhotoUri, setOriginalPhotoUri] = useState<string | null>(null); 
   
   // Preferences
@@ -65,21 +68,39 @@ export default function ParentProfileScreen() {
     }
   }, [child_ids, profile_photo_url]);
 
-  // --- NAVIGATION & SAVING ---
+  // --- NAVIGATION: Pass new data back to Home! ---
   const handleGoBack = () => {
     router.navigate({
       pathname: "/(parent-tabs)/parent-screen",
       params: { 
         full_name: displayName, 
-        email: displayEmail, 
+        email: displayEmail,
+        phone_number: displayPhone,
         child_ids: JSON.stringify(childrenList), 
         profile_photo_url: currentPhotoUri || "null" 
       }
     });
   };
 
+  // --- HARDWARE BACK BUTTON INTERCEPTION ---
+  useEffect(() => {
+    const onBackPress = () => {
+      if (isEditing) {
+        setIsEditing(false);
+        setCurrentPhotoUri(originalPhotoUri);
+      } else {
+        handleGoBack(); // Uses the function above to ensure params are sent
+      }
+      return true; 
+    };
+
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+    return () => backHandler.remove();
+  }, [isEditing, originalPhotoUri, displayName, displayEmail, displayPhone, childrenList, currentPhotoUri]);
+
+
+  // --- ACTIONS ---
   const handleEditToggle = () => {
-    // Sync edit states with current display states before entering edit mode
     setEditName(displayName);
     setEditEmail(displayEmail);
     setEditPhone(displayPhone);
@@ -88,13 +109,12 @@ export default function ParentProfileScreen() {
   };
 
   const handleCancel = () => {
-    // Revert photo changes
     setCurrentPhotoUri(originalPhotoUri);
     setIsEditing(false);
   };
 
   const handleSave = () => {
-    // Apply edited values to the main display variables
+    // 100% Frontend Only - Update local states
     setDisplayName(editName);
     setDisplayEmail(editEmail);
     setDisplayPhone(editPhone);
@@ -102,7 +122,11 @@ export default function ParentProfileScreen() {
     setOriginalPhotoUri(currentPhotoUri);
     
     setIsEditing(false);
-    Alert.alert("Success", "Profile and linked children updated successfully!");
+    
+    // Once they hit OK, we navigate back to Home and hand it the new data!
+    Alert.alert("Success", "Profile updated locally!", [
+      { text: "OK", onPress: handleGoBack }
+    ]);
   };
 
   const handleLogout = () => {
@@ -112,36 +136,20 @@ export default function ParentProfileScreen() {
     ]);
   };
 
-  // --- CHILD MANAGEMENT LOGIC ---
   const handleRemoveChild = (idToRemove: string) => {
     Alert.alert("Remove Child", `Are you sure you want to unlink Student ID: ${idToRemove}?`, [
       { text: "Cancel", style: "cancel" },
-      { 
-        text: "Remove", 
-        style: "destructive", 
-        onPress: () => {
-          setEditChildrenList(editChildrenList.filter(id => id !== idToRemove));
-        }
-      }
+      { text: "Remove", style: "destructive", onPress: () => setEditChildrenList(editChildrenList.filter(id => id !== idToRemove)) }
     ]);
   };
 
   const handleAddChild = () => {
-    if (newChildId.trim() === "") {
-      Alert.alert("Error", "Please enter a valid Student ID.");
-      return;
-    }
-    if (editChildrenList.includes(newChildId.trim())) {
-      Alert.alert("Notice", "This Student ID is already linked.");
-      return;
-    }
-    
-    // In a real app, you would verify this ID exists in the database first!
+    if (newChildId.trim() === "") return Alert.alert("Error", "Please enter a valid Student ID.");
+    if (editChildrenList.includes(newChildId.trim())) return Alert.alert("Notice", "This Student ID is already linked.");
     setEditChildrenList([...editChildrenList, newChildId.trim()]);
     setNewChildId(""); 
   };
 
-  // --- IMAGE PICKER LOGIC ---
   const handlePickImage = () => {
     Alert.alert("Profile Photo", "Choose an option", [
         { text: "Camera", onPress: openCamera },
@@ -152,33 +160,26 @@ export default function ParentProfileScreen() {
   };
 
   const openCamera = async () => {
-    const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
-    if (!permissionResult.granted) return Alert.alert("Permission needed!");
-    
-    const result = await ImagePicker.launchCameraAsync({ 
-      allowsEditing: true, // Forces crop mode to help normalize camera orientation
-      aspect: [1, 1], 
-      quality: 0.5 
-    });
-    
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') return Alert.alert("Permission Denied", "Enable camera access in settings.", [{ text: "Cancel", style: "cancel" }, { text: "Settings", onPress: () => Linking.openSettings() }]);
+    const result = await ImagePicker.launchCameraAsync({ allowsEditing: true, aspect: [1, 1], quality: 0.5 });
     if (!result.canceled) setCurrentPhotoUri(result.assets[0].uri);
   };
 
   const openGallery = async () => {
-    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permissionResult.granted) return Alert.alert("Permission needed!");
-    
-    const result = await ImagePicker.launchImageLibraryAsync({ 
-      mediaTypes: ['images'], 
-      allowsEditing: true, 
-      aspect: [1, 1], 
-      quality: 0.5 
-    });
-    
+    const { status, canAskAgain } = await ImagePicker.getMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      if (canAskAgain) {
+        const newPermission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (newPermission.status !== 'granted') return; 
+      } else {
+        return Alert.alert("Permission Required", "Enable gallery access in settings.", [{ text: "Cancel", style: "cancel" }, { text: "Settings", onPress: () => Linking.openSettings() }]);
+      }
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, aspect: [1, 1], quality: 0.5 });
     if (!result.canceled) setCurrentPhotoUri(result.assets[0].uri);
   };
 
-  // --- REUSABLE COMPONENTS ---
   const InfoRow = ({ label, value }: { label: string, value: string }) => (
     <View style={styles.infoRow}>
       <Text style={styles.infoLabel}>{label}</Text>
@@ -188,6 +189,10 @@ export default function ParentProfileScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
+      
+      {/* DISABLE iOS SWIPE GESTURE WHEN EDITING */}
+      <Stack.Screen options={{ headerShown: false, gestureEnabled: !isEditing }} />
+
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
         
         {/* DYNAMIC HEADER */}
@@ -349,7 +354,6 @@ export default function ParentProfileScreen() {
               <View style={styles.card}>
                 <Text style={styles.cardTitle}>Manage Linked Children</Text>
                 
-                {/* Existing Children List */}
                 {editChildrenList.length > 0 ? (
                   editChildrenList.map((id, index) => (
                     <View key={index} style={styles.editChildRow}>
@@ -371,7 +375,6 @@ export default function ParentProfileScreen() {
 
                 <View style={styles.cardDivider} />
 
-                {/* Add New Child Input */}
                 <Text style={[styles.label, { fontSize: 12, marginTop: 5 }]}>Link New Student</Text>
                 <View style={styles.addChildContainer}>
                   <TextInput 
@@ -387,11 +390,37 @@ export default function ParentProfileScreen() {
                 </View>
               </View>
 
+              {/* App Permissions Section */}
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>App Permissions</Text>
+                <View style={styles.switchRow}>
+                  <View>
+                    <Text style={styles.infoLabel}>Photo Gallery Access</Text>
+                    <Text style={styles.helperText}>Used for profile & chat photos</Text>
+                  </View>
+                  <TouchableOpacity onPress={() => Linking.openSettings()} style={styles.manageBtn}>
+                    <Text style={styles.manageBtnText}>Manage</Text>
+                  </TouchableOpacity>
+                </View>
+                <View style={styles.cardDivider} />
+                <View style={styles.switchRow}>
+                  <View>
+                    <Text style={styles.infoLabel}>Camera Access</Text>
+                    <Text style={styles.helperText}>Used for taking live photos</Text>
+                  </View>
+                  <TouchableOpacity onPress={() => Linking.openSettings()} style={styles.manageBtn}>
+                    <Text style={styles.manageBtnText}>Manage</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
               <View style={styles.card}>
                 <Text style={styles.cardTitle}>Notification Settings</Text>
-                
                 <View style={styles.switchRow}>
-                  <Text style={styles.infoLabel}>Push Notifications</Text>
+                  <View>
+                    <Text style={styles.infoLabel}>Push Notifications</Text>
+                    <Text style={styles.helperText}>Receive instant alerts</Text>
+                  </View>
                   <Switch 
                     value={pushNotifications} 
                     onValueChange={setPushNotifications}
@@ -401,7 +430,10 @@ export default function ParentProfileScreen() {
                 </View>
                 <View style={styles.cardDivider} />
                 <View style={styles.switchRow}>
-                  <Text style={styles.infoLabel}>Email Alerts</Text>
+                  <View>
+                    <Text style={styles.infoLabel}>Email Alerts</Text>
+                    <Text style={styles.helperText}>Receive daily summaries</Text>
+                  </View>
                   <Switch 
                     value={emailAlerts} 
                     onValueChange={setEmailAlerts}
@@ -422,18 +454,13 @@ export default function ParentProfileScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#F8FAFC" },
-  
-  // Header
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 20, paddingVertical: 12, backgroundColor: "#FFFFFF", borderBottomWidth: 1, borderBottomColor: "#E2E8F0" },
   iconButton: { padding: 8, minWidth: 60, alignItems: "center", justifyContent: "center" },
   headerTitle: { fontSize: 18, fontWeight: "bold", color: "#1E293B" },
   cancelText: { fontSize: 16, color: "#64748B" },
   saveText: { fontSize: 16, fontWeight: "bold", color: "#2563EB" },
-  
   scrollContent: { paddingBottom: 40 },
   tabContent: { padding: 20 },
-
-  // Profile Header (View Mode)
   profileHeader: { flexDirection: "row", alignItems: "center", marginBottom: 25 },
   avatar: { width: 80, height: 80, borderRadius: 40, marginRight: 16, elevation: 2, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4 },
   avatarImage: { width: "100%", height: "100%", borderRadius: 40 },
@@ -441,46 +468,36 @@ const styles = StyleSheet.create({
   profileInfo: { flex: 1 },
   name: { fontSize: 22, fontWeight: "bold", color: "#1E293B" },
   roleText: { fontSize: 14, color: "#64748B", marginTop: 4, fontWeight: "500" },
-
-  // Cards & Rows
   card: { backgroundColor: "#FFFFFF", borderRadius: 16, padding: 20, marginBottom: 16, borderWidth: 1, borderColor: "#F1F5F9", shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.03, shadowRadius: 8, elevation: 1 },
   cardTitle: { fontSize: 16, fontWeight: "bold", color: "#1E293B", marginBottom: 16 },
   infoRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 4 },
-  infoLabel: { fontSize: 14, color: "#64748B", flex: 1 },
-  infoValue: { fontSize: 14, color: "#1E293B", fontWeight: "600", flex: 1.5, textAlign: "right" },
+  infoLabel: { fontSize: 14, color: "#1E293B", flex: 1, fontWeight: "500" },
+  infoValue: { fontSize: 14, color: "#64748B", flex: 1.5, textAlign: "right" },
   cardDivider: { height: 1, backgroundColor: "#F1F5F9", marginVertical: 12 },
-  
   switchRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 4 },
-
-  // Linked Children Display
+  helperText: { fontSize: 11, color: "#9CA3AF", marginTop: 2 },
+  manageBtn: { backgroundColor: "#EFF6FF", paddingVertical: 6, paddingHorizontal: 12, borderRadius: 8 },
+  manageBtnText: { color: "#2563EB", fontSize: 13, fontWeight: "600" },
   childRowView: { flexDirection: "row", alignItems: "center", paddingVertical: 8, backgroundColor: "#F8FAFC", paddingHorizontal: 12, borderRadius: 12, marginBottom: 8 },
   childAvatarBg: { width: 36, height: 36, borderRadius: 18, backgroundColor: "#D1FAE5", justifyContent: "center", alignItems: "center", marginRight: 12 },
   childNameView: { fontSize: 15, fontWeight: "bold", color: "#1E293B" },
   childIdView: { fontSize: 12, color: "#64748B", marginTop: 2 },
   emptyText: { color: "#64748B", fontSize: 14, fontStyle: "italic", textAlign: "center", paddingVertical: 10 },
-
-  // Edit Children Display
   editChildRow: { flexDirection: "row", alignItems: "center", paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: "#F1F5F9" },
   removeBtn: { padding: 8, backgroundColor: "#FEF2F2", borderRadius: 8 },
   addChildContainer: { flexDirection: "row", alignItems: "center", marginTop: 5 },
   addChildInput: { flex: 1, backgroundColor: "#F8FAFC", borderWidth: 1, borderColor: "#E2E8F0", borderRadius: 10, padding: 12, fontSize: 14, color: "#1E293B", marginRight: 10 },
   addChildBtn: { backgroundColor: "#2563EB", paddingVertical: 12, paddingHorizontal: 20, borderRadius: 10 },
   addChildBtnText: { color: "#FFFFFF", fontWeight: "bold", fontSize: 14 },
-
-  // Photo Edit Container
   photoEditContainer: { alignItems: "center", marginBottom: 30, marginTop: 10 },
   largeAvatar: { width: 110, height: 110, borderRadius: 55, elevation: 3, shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.15, shadowRadius: 8 },
   largeAvatarImage: { width: "100%", height: "100%", borderRadius: 55, borderWidth: 3, borderColor: "#FFFFFF" },
   placeholderAvatarLarge: { width: "100%", height: "100%", borderRadius: 55, backgroundColor: "#EFF6FF", justifyContent: "center", alignItems: "center", borderWidth: 3, borderColor: "#FFFFFF" },
   cameraBadge: { position: "absolute", bottom: 0, right: 0, backgroundColor: "#2563EB", width: 36, height: 36, borderRadius: 18, justifyContent: "center", alignItems: "center", borderWidth: 3, borderColor: "#FFFFFF" },
   changePhotoText: { marginTop: 16, fontSize: 14, fontWeight: "600", color: "#2563EB" },
-
-  // Inputs
   inputGroup: { marginBottom: 20 },
   label: { fontSize: 13, fontWeight: "bold", color: "#1E293B", marginBottom: 8 },
   input: { backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#E2E8F0", borderRadius: 12, padding: 16, fontSize: 15, color: "#1E293B" },
-  
-  // Logout
   logoutButton: { flexDirection: "row", justifyContent: "center", alignItems: "center", marginTop: 10, paddingVertical: 14, borderRadius: 12, borderWidth: 1, borderColor: "#FECACA", backgroundColor: "#FEF2F2" },
   logoutButtonText: { color: "#EF4444", fontSize: 15, fontWeight: "bold" }
 });

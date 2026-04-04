@@ -170,6 +170,46 @@ app.get('/api/profile/:studentId', async (req, res) => {
   }
 });
 
+// 5. FETCH LATEST PARENT DATA
+app.get('/api/parents/:email', async (req, res) => {
+  try {
+    const { email } = req.params;
+    
+    const result = await db.query(
+      'SELECT full_name, email, phone_number, child_student_ids, profile_photo_url FROM parents WHERE email = $1',
+      [email.toLowerCase().trim()]
+    );
+
+    if (result.rows.length === 0) return res.status(404).json({ error: "Parent not found" });
+
+    res.json({ user: result.rows[0] });
+  } catch (error) {
+    console.error(" Fetch Parent Error:", error.message);
+    res.status(500).json({ error: "Server error fetching parent profile." });
+  }
+});
+
+// 6. UPDATE PARENT PROFILE
+app.put('/api/parents/update', async (req, res) => {
+  try {
+    const { email, full_name, phone_number, child_student_ids, profile_photo_url } = req.body;
+    
+    const result = await db.query(
+      `UPDATE parents 
+       SET full_name = $1, phone_number = $2, child_student_ids = $3, profile_photo_url = $4 
+       WHERE email = $5 RETURNING *`,
+      [full_name, phone_number, child_student_ids, profile_photo_url, email.toLowerCase().trim()]
+    );
+
+    if (result.rows.length === 0) return res.status(404).json({ error: "Parent not found" });
+
+    res.json({ message: "Profile updated successfully", user: result.rows[0] });
+  } catch (error) {
+    console.error(" Update Parent Error:", error.message);
+    res.status(500).json({ error: "Server error updating parent profile." });
+  }
+});
+
 // --- START THE SERVER ---
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {

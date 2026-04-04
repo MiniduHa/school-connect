@@ -20,8 +20,13 @@ export default function ChildDetailsScreen() {
   const grade = params.grade as string || "Grade N/A";
   const avatarUrl = params.avatarUrl as string;
 
+  // --- STATE FOR INTERACTIVE FEATURES ---
   const [showCalendar, setShowCalendar] = useState(false);
   const [activeDay, setActiveDay] = useState("Mon");
+  const [currentDate, setCurrentDate] = useState(new Date());
+  
+  // NEW: State to track which teacher card is currently expanded
+  const [expandedTeacher, setExpandedTeacher] = useState<string | null>(null);
 
   const fullReport = {
     attendance: 92,
@@ -37,6 +42,14 @@ export default function ChildDetailsScreen() {
     ],
     extracurriculars: ["Under-15 Cricket Team", "Science Society"]
   };
+
+  // NEW: Mock Teacher Data
+  const teachersList = [
+    { id: "t1", name: "Mrs. N. Silva", role: "Class Teacher & Science", email: "n.silva@schoolconnect.lk", phone: "+94 71 234 5678" },
+    { id: "t2", name: "Mr. K. Perera", role: "Mathematics", email: "k.perera@schoolconnect.lk", phone: "+94 77 987 6543" },
+    { id: "t3", name: "Ms. E. Fernando", role: "English", email: "e.fernando@schoolconnect.lk", phone: "+94 70 555 4444" },
+    { id: "t4", name: "Mr. S. Bandara", role: "History", email: "s.bandara@schoolconnect.lk", phone: "+94 78 111 2222" }
+  ];
 
   const timetable: Record<string, { time: string, subject: string, teacher: string }[]> = {
     "Mon": [
@@ -58,41 +71,75 @@ export default function ChildDetailsScreen() {
 
   const daysOfWeek = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 
+  const changeMonth = (offset: number) => {
+    setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + offset, 1));
+  };
+
   const renderCalendar = () => {
-    const days = Array.from({ length: 30 }, (_, i) => i + 1);
-    const weekDays = ["S", "M", "T", "W", "T", "F", "S"];
+    const year = currentDate.getFullYear();
+    const month = currentDate.getMonth();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const startingDayIndex = new Date(year, month, 1).getDay();
+    const monthName = currentDate.toLocaleString('default', { month: 'long' });
+    const weekDays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    
+    const emptySlots = Array.from({ length: startingDayIndex }, (_, i) => i);
+    const days = Array.from({ length: daysInMonth }, (_, i) => i + 1);
 
     return (
       <View style={styles.calendarContainer}>
         <View style={styles.calendarHeader}>
-          <Text style={styles.calendarMonth}>October 2023</Text>
+          <TouchableOpacity onPress={() => changeMonth(-1)} style={styles.monthNavButton}>
+            <Feather name="chevron-left" size={20} color="#64748B" />
+          </TouchableOpacity>
+          <Text style={styles.calendarMonth}>{monthName} {year}</Text>
+          <TouchableOpacity onPress={() => changeMonth(1)} style={styles.monthNavButton}>
+            <Feather name="chevron-right" size={20} color="#64748B" />
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.legendContainer}>
           <View style={styles.legendRow}>
             <View style={[styles.legendDot, { backgroundColor: "#10B981" }]} />
             <Text style={styles.legendText}>Present</Text>
-            <View style={[styles.legendDot, { backgroundColor: "#EF4444", marginLeft: 8 }]} />
+            <View style={[styles.legendDot, { backgroundColor: "#EF4444", marginLeft: 12 }]} />
             <Text style={styles.legendText}>Absent</Text>
           </View>
         </View>
         
         <View style={styles.calendarGrid}>
           {weekDays.map((day, idx) => (
-            <Text key={`wd-${idx}`} style={styles.weekDayText}>{day}</Text>
+            <View key={`header-${idx}`} style={styles.dayBoxWrapper}>
+              <Text style={styles.weekDayText}>{day}</Text>
+            </View>
           ))}
-          
-          {/* FIX: Removed spaces between components! */}
-          <View style={styles.dayBox} />
-          <View style={styles.dayBox} />
-          
+          {emptySlots.map((_, idx) => (
+            <View key={`empty-${idx}`} style={styles.dayBoxWrapper} />
+          ))}
           {days.map((day) => {
-            const isWeekend = (day + 2) % 7 === 0 || (day + 3) % 7 === 0;
-            const isAbsent = day === 14;
-            let bgColor = "#10B981"; 
-            if (isWeekend) bgColor = "#E2E8F0"; 
-            if (isAbsent) bgColor = "#EF4444"; 
+            const dayOfWeek = (startingDayIndex + day - 1) % 7;
+            const isWeekend = dayOfWeek === 0 || dayOfWeek === 6; 
+            const isAbsent = !isWeekend && (day === 12 || day === 22); 
+
+            let bgColor = "#FFFFFF";
+            let textColor = "#1E293B";
+
+            if (isWeekend) {
+              bgColor = "#F8FAFC"; 
+              textColor = "#9CA3AF"; 
+            } else if (isAbsent) {
+              bgColor = "#FEE2E2"; 
+              textColor = "#EF4444"; 
+            } else {
+              bgColor = "#D1FAE5"; 
+              textColor = "#059669"; 
+            }
 
             return (
-              <View key={day} style={[styles.dayBox, { backgroundColor: bgColor }]}>
-                <Text style={[styles.dayText, { color: isWeekend ? "#64748B" : "#FFFFFF" }]}>{day}</Text>
+              <View key={`day-${day}`} style={styles.dayBoxWrapper}>
+                <View style={[styles.dayBox, { backgroundColor: bgColor }]}>
+                  <Text style={[styles.dayText, { color: textColor }]}>{day}</Text>
+                </View>
               </View>
             );
           })}
@@ -154,6 +201,54 @@ export default function ChildDetailsScreen() {
         </View>
 
         {showCalendar && renderCalendar()}
+
+        {/* === NEW TEACHERS SECTION === */}
+        <Text style={styles.sectionTitle}>Teachers & Contacts</Text>
+        <View style={styles.card}>
+          {teachersList.map((teacher, idx) => {
+            const isExpanded = expandedTeacher === teacher.id;
+            return (
+              <View key={teacher.id}>
+                {/* Interactive Row */}
+                <TouchableOpacity 
+                  style={styles.teacherRow} 
+                  onPress={() => setExpandedTeacher(isExpanded ? null : teacher.id)}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.teacherAvatarBg, teacher.role.includes("Class Teacher") ? { backgroundColor: "#DBEAFE" } : { backgroundColor: "#F1F5F9" }]}>
+                    <FontAwesome6 name="chalkboard-user" size={16} color={teacher.role.includes("Class Teacher") ? "#2563EB" : "#64748B"} />
+                  </View>
+                  <View style={styles.teacherInfo}>
+                    <Text style={styles.teacherName}>{teacher.name}</Text>
+                    <Text style={styles.teacherRole}>{teacher.role}</Text>
+                  </View>
+                  <Feather name={isExpanded ? "chevron-up" : "chevron-down"} size={20} color="#9CA3AF" />
+                </TouchableOpacity>
+
+                {/* Expanded Details */}
+                {isExpanded && (
+                  <View style={styles.teacherDetails}>
+                    <View style={styles.contactRow}>
+                      <Feather name="mail" size={16} color="#64748B" />
+                      <Text style={styles.contactText}>{teacher.email}</Text>
+                    </View>
+                    <View style={styles.contactRow}>
+                      <Feather name="phone" size={16} color="#64748B" />
+                      <Text style={styles.contactText}>{teacher.phone}</Text>
+                    </View>
+                    
+                    <TouchableOpacity style={styles.messageBtn}>
+                      <Feather name="message-square" size={16} color="#FFFFFF" style={{ marginRight: 8 }} />
+                      <Text style={styles.messageBtnText}>Message Teacher</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+
+                {idx < teachersList.length - 1 && <View style={styles.divider} />}
+              </View>
+            );
+          })}
+        </View>
 
         <Text style={styles.sectionTitle}>Class Timetable</Text>
         <View style={styles.card}>
@@ -256,22 +351,40 @@ const styles = StyleSheet.create({
   cardValue: { fontSize: 22, fontWeight: "bold", color: "#1E293B" },
   cardLabel: { fontSize: 12, color: "#64748B", marginTop: 4, fontWeight: "600" },
 
-  calendarContainer: { backgroundColor: "#FFFFFF", borderRadius: 16, padding: 15, marginBottom: 25, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
+  // --- CALENDAR STYLES ---
+  calendarContainer: { backgroundColor: "#FFFFFF", borderRadius: 16, padding: 20, marginBottom: 25, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
   calendarHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 15 },
+  monthNavButton: { padding: 8, backgroundColor: "#F8FAFC", borderRadius: 10 },
   calendarMonth: { fontSize: 16, fontWeight: "bold", color: "#1E293B" },
+  legendContainer: { alignItems: "center", marginBottom: 20, paddingBottom: 15, borderBottomWidth: 1, borderBottomColor: "#F1F5F9" },
   legendRow: { flexDirection: "row", alignItems: "center" },
-  legendDot: { width: 8, height: 8, borderRadius: 4, marginRight: 4 },
-  legendText: { fontSize: 10, color: "#64748B", fontWeight: "600" },
-  calendarGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" },
-  weekDayText: { width: "13%", textAlign: "center", fontSize: 12, fontWeight: "bold", color: "#9CA3AF", marginBottom: 10 },
-  dayBox: { width: "13%", aspectRatio: 1, justifyContent: "center", alignItems: "center", borderRadius: 8, marginBottom: 5 },
+  legendDot: { width: 8, height: 8, borderRadius: 4, marginRight: 6 },
+  legendText: { fontSize: 12, color: "#64748B", fontWeight: "600" },
+  calendarGrid: { flexDirection: "row", flexWrap: "wrap", width: "100%" },
+  dayBoxWrapper: { width: "14.28%", alignItems: "center", paddingVertical: 5 },
+  weekDayText: { fontSize: 12, fontWeight: "bold", color: "#9CA3AF", marginBottom: 8 },
+  dayBox: { width: 34, height: 34, borderRadius: 17, justifyContent: "center", alignItems: "center" },
   dayText: { fontSize: 13, fontWeight: "bold" },
+
+  // --- TEACHER ACCORDION STYLES ---
+  teacherRow: { flexDirection: "row", alignItems: "center", paddingVertical: 12 },
+  teacherAvatarBg: { width: 40, height: 40, borderRadius: 20, justifyContent: "center", alignItems: "center", marginRight: 15 },
+  teacherInfo: { flex: 1 },
+  teacherName: { fontSize: 15, fontWeight: "bold", color: "#1E293B" },
+  teacherRole: { fontSize: 12, color: "#64748B", marginTop: 2, fontWeight: "500" },
+  teacherDetails: { backgroundColor: "#F8FAFC", padding: 15, borderRadius: 12, marginTop: 5, marginBottom: 10 },
+  contactRow: { flexDirection: "row", alignItems: "center", marginBottom: 10 },
+  contactText: { fontSize: 13, color: "#475569", marginLeft: 10, fontWeight: "500" },
+  messageBtn: { flexDirection: "row", backgroundColor: "#2563EB", paddingVertical: 10, borderRadius: 8, justifyContent: "center", alignItems: "center", marginTop: 5 },
+  messageBtnText: { color: "#FFFFFF", fontWeight: "bold", fontSize: 13 },
+  divider: { height: 1, backgroundColor: "#F1F5F9" },
 
   daysTabsContainer: { flexDirection: "row", justifyContent: "space-between", backgroundColor: "#F1F5F9", padding: 4, borderRadius: 12, marginBottom: 20 },
   dayTab: { flex: 1, paddingVertical: 8, alignItems: "center", borderRadius: 10 },
   activeDayTab: { backgroundColor: "#FFFFFF", shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, shadowRadius: 2, elevation: 1 },
   dayTabText: { fontSize: 13, fontWeight: "600", color: "#64748B" },
   activeDayTabText: { color: "#2563EB", fontWeight: "bold" },
+  
   timetableList: { paddingLeft: 5 },
   timelineRow: { flexDirection: "row" },
   timeColumn: { width: 70, paddingTop: 15 },
@@ -284,12 +397,10 @@ const styles = StyleSheet.create({
   lessonTeacher: { fontSize: 13, color: "#64748B", marginTop: 4 },
 
   sectionTitle: { fontSize: 14, fontWeight: "bold", color: "#9CA3AF", letterSpacing: 0.5, marginBottom: 10, paddingLeft: 5 },
-  
   card: { backgroundColor: "#FFFFFF", borderRadius: 16, padding: 20, marginBottom: 25, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
   
   tableHeader: { flexDirection: "row", borderBottomWidth: 1, borderBottomColor: "#E2E8F0", paddingBottom: 10, marginBottom: 10 },
   tableHeaderText: { fontSize: 12, fontWeight: "bold", color: "#9CA3AF" },
-  
   tableRow: { flexDirection: "row", alignItems: "center", paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: "#F8FAFC" },
   subjectName: { fontSize: 14, fontWeight: "600", color: "#1E293B" },
   classAvg: { fontSize: 13, color: "#64748B" },
