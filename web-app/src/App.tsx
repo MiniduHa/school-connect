@@ -13,6 +13,11 @@ import PlatformSettings from './pages/super-admin/PlatformSettings';
 // --- SCHOOL ADMIN IMPORTS ---
 import SchoolAdminLayout from './pages/school-admin/SchoolAdminLayout';
 import SchoolAdminDashboard from './pages/school-admin/SchoolAdminDashboard';
+import ManageTeachers from './pages/school-admin/ManageTeachers';
+import ManageStudents from './pages/school-admin/ManageStudents';
+import ManageClasses from './pages/school-admin/ManageClasses';
+import ManageCalendar from './pages/school-admin/ManageCalendar';
+import ManageNotices from './pages/school-admin/ManageNotices';
 
 function App() {
   return (
@@ -34,12 +39,11 @@ function App() {
         {/* --- SCHOOL ADMIN ROUTES --- */}
         <Route path="/school-admin" element={<SchoolAdminLayout />}>
           <Route index element={<SchoolAdminDashboard />} />
-          {/* Temporary placeholders for the sidebar links so they don't break */}
-          <Route path="teachers" element={<div className="p-8 text-xl font-bold text-slate-800">Manage Teachers (Coming Soon)</div>} />
-          <Route path="students" element={<div className="p-8 text-xl font-bold text-slate-800">Manage Students (Coming Soon)</div>} />
-          <Route path="classes" element={<div className="p-8 text-xl font-bold text-slate-800">Manage Classes (Coming Soon)</div>} />
-          <Route path="calendar" element={<div className="p-8 text-xl font-bold text-slate-800">School Calendar (Coming Soon)</div>} />
-          <Route path="notices" element={<div className="p-8 text-xl font-bold text-slate-800">Notices & Announcements (Coming Soon)</div>} />
+          <Route path="teachers" element={<ManageTeachers />} />
+          <Route path="students" element={<ManageStudents />} />
+          <Route path="classes" element={<ManageClasses />} />
+          <Route path="calendar" element={<ManageCalendar />} />
+          <Route path="notices" element={<ManageNotices />} />
         </Route>
 
       </Routes>
