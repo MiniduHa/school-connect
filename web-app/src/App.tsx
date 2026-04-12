@@ -10,8 +10,9 @@ import SuperAdminDashboard from './pages/super-admin/SuperAdminDashboard';
 import ManageSchools from './pages/super-admin/ManageSchools';
 import PlatformSettings from './pages/super-admin/PlatformSettings';
 
-// Placeholder for School Admin (exactly as you had it!)
-const SchoolAdminDashboard = () => <div className="p-8 text-2xl font-bold">School Admin Dashboard (Coming Soon)</div>;
+// --- SCHOOL ADMIN IMPORTS ---
+import SchoolAdminLayout from './pages/school-admin/SchoolAdminLayout';
+import SchoolAdminDashboard from './pages/school-admin/SchoolAdminDashboard';
 
 function App() {
   return (
@@ -21,7 +22,7 @@ function App() {
         
         {/* --- AUTH & REGISTRATION ROUTES --- */}
         <Route path="/login" element={<AdminLogin />} />
-        <Route path="/register" element={<SchoolRegistration />} /> {/* NEW ROUTE */}
+        <Route path="/register" element={<SchoolRegistration />} />
 
         {/* --- SUPER ADMIN ROUTES --- */}
         <Route path="/super-admin" element={<SuperAdminLayout />}>
@@ -31,7 +32,16 @@ function App() {
         </Route>
 
         {/* --- SCHOOL ADMIN ROUTES --- */}
-        <Route path="/school-admin/*" element={<SchoolAdminDashboard />} />
+        <Route path="/school-admin" element={<SchoolAdminLayout />}>
+          <Route index element={<SchoolAdminDashboard />} />
+          {/* Temporary placeholders for the sidebar links so they don't break */}
+          <Route path="teachers" element={<div className="p-8 text-xl font-bold text-slate-800">Manage Teachers (Coming Soon)</div>} />
+          <Route path="students" element={<div className="p-8 text-xl font-bold text-slate-800">Manage Students (Coming Soon)</div>} />
+          <Route path="classes" element={<div className="p-8 text-xl font-bold text-slate-800">Manage Classes (Coming Soon)</div>} />
+          <Route path="calendar" element={<div className="p-8 text-xl font-bold text-slate-800">School Calendar (Coming Soon)</div>} />
+          <Route path="notices" element={<div className="p-8 text-xl font-bold text-slate-800">Notices & Announcements (Coming Soon)</div>} />
+        </Route>
+
       </Routes>
     </Router>
   );
