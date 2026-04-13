@@ -1,74 +1,99 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Building2, Users, UserCheck, TrendingUp, CheckCircle, XCircle, Clock, Eye, Mail, X, Phone, Calendar as CalendarIcon } from 'lucide-react';
-
-const stats = [
-  { title: "Total Schools", value: "12", icon: Building2, color: "bg-blue-500" },
-  { title: "Total Students", value: "4,520", icon: Users, color: "bg-emerald-500" },
-  { title: "Total Parents", value: "3,890", icon: UserCheck, color: "bg-amber-500" },
-  { title: "System Health", value: "99.9%", icon: TrendingUp, color: "bg-purple-500" },
-];
-
-// Initial mock data
-const initialPending = [
-  { id: 101, name: "Horizon College International", contact: "Mr. Silva", email: "principal@horizon.edu", phone: "+94 77 111 2222", date: "2 hours ago", status: "Pending" },
-  { id: 102, name: "Stafford International School", contact: "Mrs. Perera", email: "admin@stafford.lk", phone: "+94 77 333 4444", date: "5 hours ago", status: "Pending" },
-];
-
-const initialRecent = [
-  { id: 1, name: "S. Thomas' College", contact: "Principal Perera", email: "admin@stc.edu", phone: "+94 11 234 5678", joined: "Oct 12, 2026", status: "Active", students: 1250 },
-  { id: 2, name: "Royal College", contact: "Principal Silva", email: "info@royal.edu", phone: "+94 11 987 6543", joined: "Oct 15, 2026", status: "Active", students: 2100 },
-  { id: 3, name: "Gateway College", contact: "Admin Fernando", email: "hello@gateway.lk", phone: "+94 11 555 4444", joined: "Nov 02, 2026", status: "Active", students: 850 },
-];
 
 export default function SuperAdminDashboard() {
   const navigate = useNavigate();
   
-  const [pendingApprovals, setPendingApprovals] = useState(initialPending);
-  const [recentSchools, setRecentSchools] = useState(initialRecent);
+  // State for our live data
+  const [dashboardStats, setDashboardStats] = useState([
+    { title: "Total Schools", value: "0", icon: Building2, color: "bg-blue-500" },
+    { title: "Total Students", value: "0", icon: Users, color: "bg-emerald-500" },
+    { title: "Total Parents", value: "0", icon: UserCheck, color: "bg-amber-500" },
+    { title: "System Health", value: "99.9%", icon: TrendingUp, color: "bg-purple-500" },
+  ]);
+  
+  const [pendingApprovals, setPendingApprovals] = useState<any[]>([]);
+  const [recentSchools, setRecentSchools] = useState<any[]>([]);
   const [selectedSchool, setSelectedSchool] = useState<any | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // --- LOGIC FUNCTIONS ---
-  const handleApprove = (schoolId: number) => {
-    const schoolToApprove = pendingApprovals.find(s => s.id === schoolId);
-    
-    if (schoolToApprove) {
-      setPendingApprovals(pendingApprovals.filter(s => s.id !== schoolId));
-      
-      const newActiveSchool = {
-        id: schoolToApprove.id,
-        name: schoolToApprove.name,
-        contact: schoolToApprove.contact,
-        email: schoolToApprove.email, 
-        phone: schoolToApprove.phone,
-        joined: "Just now",
-        status: "Active",
-        students: 0 
-      };
-      setRecentSchools([newActiveSchool, ...recentSchools]);
+  // --- FETCH LIVE DATA ON LOAD ---
+  useEffect(() => {
+    fetchDashboardData();
+  }, []);
+
+  const fetchDashboardData = async () => {
+    try {
+      // UPDATED TO NEW MODULAR ROUTE
+      const response = await fetch('http://localhost:5000/api/superadmin/schools/dashboard');
+      const data = await response.json();
+
+      if (response.ok) {
+        setPendingApprovals(data.pendingApprovals);
+        setRecentSchools(data.recentSchools);
+        
+        // Update the stats cards
+        setDashboardStats([
+          { title: "Total Schools", value: data.stats.totalSchools.toString(), icon: Building2, color: "bg-blue-500" },
+          { title: "Total Students", value: data.stats.totalStudents.toString(), icon: Users, color: "bg-emerald-500" },
+          { title: "Total Parents", value: data.stats.totalParents.toString(), icon: UserCheck, color: "bg-amber-500" },
+          { title: "System Health", value: data.stats.systemHealth, icon: TrendingUp, color: "bg-purple-500" },
+        ]);
+      }
+    } catch (error) {
+      console.error("Error fetching dashboard data:", error);
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const handleDeclinePending = (schoolId: number) => {
-    setPendingApprovals(pendingApprovals.filter(s => s.id !== schoolId));
+  // --- REAL ACTION LOGIC TO UPDATE DATABASE ---
+  const updateSchoolStatus = async (schoolId: string, newStatus: string) => {
+    try {
+      // CALLING OUR NEW UPDATE ENDPOINT
+      const response = await fetch(`http://localhost:5000/api/superadmin/schools/${schoolId}/status`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus }),
+      });
+
+      if (response.ok) {
+        // If successful, re-fetch the dashboard data to instantly update the UI!
+        fetchDashboardData();
+      } else {
+        alert("Failed to update school status. Please try again.");
+      }
+    } catch (error) {
+      console.error("Error updating status:", error);
+    }
   };
 
-  // --- NEW ACTION LOGIC: Toggle Active/Declined ---
-  const handleStatusToggle = (schoolId: number, currentStatus: string) => {
-    // If it's Active, make it Declined. Otherwise, make it Active.
-    const newStatus = currentStatus === 'Active' ? 'Declined' : 'Active';
-    
-    setRecentSchools(recentSchools.map(school => 
-      school.id === schoolId ? { ...school, status: newStatus } : school
-    ));
+  const handleApprove = (schoolId: string) => {
+    updateSchoolStatus(schoolId, 'Active');
   };
+
+  const handleDeclinePending = (schoolId: string) => {
+    if (window.confirm("Are you sure you want to decline this school's registration?")) {
+      updateSchoolStatus(schoolId, 'Declined');
+    }
+  };
+
+  const handleStatusToggle = (schoolId: string, currentStatus: string) => {
+    const newStatus = currentStatus === 'Active' ? 'Declined' : 'Active';
+    updateSchoolStatus(schoolId, newStatus);
+  };
+
+  if (isLoading) {
+    return <div className="flex justify-center items-center h-64 text-slate-500 font-medium">Loading Dashboard Data...</div>;
+  }
 
   return (
     <div className="max-w-7xl mx-auto space-y-6 relative">
       
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {stats.map((stat, index) => {
+        {dashboardStats.map((stat, index) => {
           const Icon = stat.icon;
           return (
             <div key={index} className="bg-white rounded-xl p-6 border border-slate-100 shadow-sm flex items-center gap-4">
@@ -104,7 +129,7 @@ export default function SuperAdminDashboard() {
                 <div key={school.id} className="p-4 border-b border-slate-100 last:border-0 hover:bg-slate-50 transition-colors rounded-lg">
                   <h4 className="font-bold text-slate-800">{school.name}</h4>
                   <p className="text-xs text-slate-500 mt-1">{school.contact} • {school.email}</p>
-                  <p className="text-xs text-slate-400 mt-1 mb-3">Requested {school.date}</p>
+                  <p className="text-xs text-slate-400 mt-1 mb-3">Requested: {new Date(school.date).toLocaleDateString()}</p>
                   
                   <div className="flex items-center gap-2 mt-2">
                     <button 
@@ -155,56 +180,65 @@ export default function SuperAdminDashboard() {
                 </tr>
               </thead>
               <tbody>
-                {recentSchools.map((school) => (
-                  <tr key={school.id} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
-                    <td className="p-4">
-                      <p className="font-medium text-slate-800">{school.name}</p>
-                      <p className="text-xs text-slate-500 mt-0.5">{school.students} Students</p>
-                    </td>
-                    <td className="p-4 text-slate-600 text-sm">{school.joined}</td>
-                    <td className="p-4">
-                      <span className={`px-3 py-1 rounded-full text-xs font-semibold block w-max mx-auto ${
-                        school.status === 'Active' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
-                      }`}>
-                        {school.status}
-                      </span>
-                    </td>
-                    
-                    <td className="p-4">
-                      <div className="flex items-center justify-center gap-2">
-                        <button 
-                          onClick={() => setSelectedSchool(school)}
-                          className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
-                          title="View Profile"
-                        >
-                          <Eye size={18} />
-                        </button>
-                        
-                        <button 
-                          onClick={() => window.location.href = `mailto:${school.email}`}
-                          className="p-1.5 text-slate-600 hover:bg-slate-100 rounded-md transition-colors"
-                          title="Email Admin"
-                        >
-                          <Mail size={18} />
-                        </button>
+                {recentSchools.length > 0 ? (
+                  recentSchools.map((school) => (
+                    <tr key={school.id} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
+                      <td className="p-4">
+                        <p className="font-medium text-slate-800">{school.name}</p>
+                        <p className="text-xs text-slate-500 mt-0.5">{school.students || 0} Students</p>
+                      </td>
+                      <td className="p-4 text-slate-600 text-sm">
+                        {new Date(school.joined).toLocaleDateString()}
+                      </td>
+                      <td className="p-4">
+                        <span className={`px-3 py-1 rounded-full text-xs font-semibold block w-max mx-auto ${
+                          school.status === 'Active' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
+                        }`}>
+                          {school.status}
+                        </span>
+                      </td>
+                      
+                      <td className="p-4">
+                        <div className="flex items-center justify-center gap-2">
+                          <button 
+                            onClick={() => setSelectedSchool(school)}
+                            className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
+                            title="View Profile"
+                          >
+                            <Eye size={18} />
+                          </button>
+                          
+                          <button 
+                            onClick={() => window.location.href = `mailto:${school.email}`}
+                            className="p-1.5 text-slate-600 hover:bg-slate-100 rounded-md transition-colors"
+                            title="Email Admin"
+                          >
+                            <Mail size={18} />
+                          </button>
 
-                        {/* SMART TOGGLE BUTTON: Active / Decline */}
-                        <button 
-                          onClick={() => handleStatusToggle(school.id, school.status)}
-                          className={`p-1.5 rounded-md transition-colors ${
-                            school.status === 'Active'
-                              ? 'text-red-600 hover:bg-red-50' 
-                              : 'text-emerald-600 hover:bg-emerald-50'
-                          }`}
-                          title={school.status === 'Active' ? 'Decline School' : 'Activate School'}
-                        >
-                          {school.status === 'Active' ? <XCircle size={18} /> : <CheckCircle size={18} />}
-                        </button>
-                      </div>
+                          <button 
+                            onClick={() => handleStatusToggle(school.id, school.status)}
+                            className={`p-1.5 rounded-md transition-colors ${
+                              school.status === 'Active'
+                                ? 'text-red-600 hover:bg-red-50' 
+                                : 'text-emerald-600 hover:bg-emerald-50'
+                            }`}
+                            title={school.status === 'Active' ? 'Decline School' : 'Activate School'}
+                          >
+                            {school.status === 'Active' ? <XCircle size={18} /> : <CheckCircle size={18} />}
+                          </button>
+                        </div>
+                      </td>
+                      
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={4} className="p-8 text-center text-slate-500">
+                      No active schools found.
                     </td>
-                    
                   </tr>
-                ))}
+                )}
               </tbody>
             </table>
           </div>
@@ -217,7 +251,6 @@ export default function SuperAdminDashboard() {
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200">
             
-            {/* Modal Header */}
             <div className="bg-slate-50 border-b border-slate-100 p-6 flex justify-between items-center">
               <div className="flex items-center gap-3">
                 <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center">
@@ -236,7 +269,6 @@ export default function SuperAdminDashboard() {
               </button>
             </div>
 
-            {/* Modal Body */}
             <div className="p-6 space-y-6">
               
               <div className="grid grid-cols-2 gap-6">
@@ -284,7 +316,7 @@ export default function SuperAdminDashboard() {
 
               <div className="flex items-center gap-2 text-sm text-slate-500 pb-2">
                 <CalendarIcon size={16} />
-                <span>Onboarded on the platform: <span className="font-semibold">{selectedSchool.joined}</span></span>
+                <span>Onboarded on the platform: <span className="font-semibold">{new Date(selectedSchool.joined).toLocaleDateString()}</span></span>
               </div>
 
             </div>
