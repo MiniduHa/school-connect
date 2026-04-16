@@ -68,7 +68,7 @@ exports.getAllSchools = async (req, res) => {
   }
 };
 
-// 4. Create a New School (From the Add School Modal)
+// 4. Create a New School (From the Super Admin Add School Modal -> Active)
 exports.createSchool = async (req, res) => {
   try {
     const { schoolName, adminName, email, phone, schoolCategory, schoolGender, password } = req.body;
@@ -100,30 +100,58 @@ exports.deleteSchool = async (req, res) => {
     const { id } = req.params;
     const { password } = req.body;
 
-    // 1. Fetch the Super Admin account (we grab the first one since you are the only one)
-    const adminResult = await db.query("SELECT * FROM super_admins WHERE email = 'super@admin.com'");
+    if (!password) return res.status(400).json({ error: "Password is required." });
+
+    const adminResult = await db.query("SELECT * FROM super_admins");
     if (adminResult.rows.length === 0) {
-      return res.status(500).json({ error: "Super admin account not found in database." });
+      return res.status(500).json({ error: "No super admin accounts found in database." });
     }
 
-    const superAdmin = adminResult.rows[0];
-
-    // 2. Verify the provided password against the hashed database password
-    const isMatch = await bcrypt.compare(password, superAdmin.password);
-    if (!isMatch) {
-      return res.status(401).json({ error: "Incorrect Super Admin password. Deletion denied." });
+    let isMatch = false;
+    for (let admin of adminResult.rows) {
+      const match = await bcrypt.compare(password.trim(), admin.password);
+      if (match) {
+        isMatch = true;
+        break; 
+      }
     }
 
-    // 3. If password matches, permanently delete the school
+    if (!isMatch) return res.status(401).json({ error: "Incorrect Super Admin password. Deletion denied." });
+
     const deleteResult = await db.query("DELETE FROM schools WHERE id = $1 RETURNING *", [id]);
-    
-    if (deleteResult.rows.length === 0) {
-      return res.status(404).json({ error: "School not found." });
-    }
+    if (deleteResult.rows.length === 0) return res.status(404).json({ error: "School not found." });
 
     res.json({ message: "School permanently deleted." });
   } catch (error) {
     console.error("Delete School Error:", error.message);
     res.status(500).json({ error: "Failed to delete school." });
+  }
+};
+
+// 6. Public Route: Register a new school (Defaults to 'Pending')
+exports.registerSchool = async (req, res) => {
+  try {
+    const { schoolName, adminName, email, phone, schoolCategory, schoolGender, password } = req.body;
+
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    const countResult = await db.query('SELECT COUNT(*) FROM schools');
+    const nextNumber = parseInt(countResult.rows[0].count, 10) + 1;
+    const schoolId = `SCH-${nextNumber.toString().padStart(3, '0')}`;
+
+    const result = await db.query(
+      `INSERT INTO schools (id, name, admin_name, email, phone, school_category, student_type, password, status) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'Pending') RETURNING *`,
+      [schoolId, schoolName, adminName, email, phone, schoolCategory, schoolGender, hashedPassword]
+    );
+
+    res.status(201).json({ message: "Registration submitted successfully", school: result.rows[0] });
+  } catch (error) {
+    console.error("School Registration Error:", error.message);
+    if (error.code === '23505') {
+      return res.status(400).json({ error: "An application with this email already exists." });
+    }
+    res.status(500).json({ error: "Failed to register school" });
   }
 };

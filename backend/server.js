@@ -14,8 +14,9 @@ app.use(express.json());
 // Connect to Database
 const db = require('./config/db');
 
-// Import Routes
+// Import Controllers and Routes
 const schoolRoutes = require('./routes/schoolRoutes');
+const schoolController = require('./controllers/schoolController');
 
 // Initialize Supabase Client for Storage
 const supabaseUrl = process.env.SUPABASE_URL;
@@ -25,10 +26,14 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 // Configure Multer
 const upload = multer({ storage: multer.memoryStorage() });
 
-// --- APPLY NEW MODULAR ROUTES ---
+// --- APPLY MODULAR ROUTES ---
+// 1. Super Admin School Management
 app.use('/api/superadmin/schools', schoolRoutes);
 
-// --- LEGACY ROUTES (Can be moved to authRoutes later) ---
+// 2. Public School Registration
+app.post('/api/schools/register', schoolController.registerSchool);
+
+// --- LEGACY AUTH & PROFILE ROUTES ---
 app.post('/api/auth/register', async (req, res) => {
   try {
     const { role, email, password } = req.body;
@@ -70,34 +75,85 @@ app.post('/api/auth/register', async (req, res) => {
 
 app.post('/api/auth/login', async (req, res) => {
   try {
-    const { email, password, role } = req.body;
-    let result;
+    // Notice: We no longer ask for 'role' from the frontend!
+    const { email, password } = req.body; 
+    const cleanEmail = email.toLowerCase().trim();
+    
+    let user = null;
+    let assignedRole = '';
 
-    if (role === 'SuperAdmin') {
-      result = await db.query('SELECT * FROM super_admins WHERE email = $1', [email.toLowerCase().trim()]);
-    } else if (role === 'Parent') {
-      result = await db.query('SELECT * FROM parents WHERE email = $1', [email.toLowerCase().trim()]);
-    } else if (role === 'Teacher') {
-      result = await db.query('SELECT * FROM teachers WHERE email = $1', [email.toLowerCase().trim()]);
-    } else {
-      result = await db.query('SELECT * FROM students WHERE email = $1', [email.toLowerCase().trim()]);
+    // 1. Secretly check Super Admins FIRST
+    let result = await db.query('SELECT * FROM super_admins WHERE email = $1', [cleanEmail]);
+    if (result.rows.length > 0) {
+      user = result.rows[0];
+      assignedRole = 'SuperAdmin';
     }
 
-    if (result.rows.length === 0) return res.status(400).json({ error: "No account found." });
+    // 2. If not a Super Admin, check School Admins
+    if (!user) {
+      result = await db.query('SELECT * FROM schools WHERE email = $1', [cleanEmail]);
+      if (result.rows.length > 0) {
+        user = result.rows[0];
+        assignedRole = 'SchoolAdmin';
+      }
+    }
 
-    const user = result.rows[0];
+    // 3. If still not found, check Teachers
+    if (!user) {
+      result = await db.query('SELECT * FROM teachers WHERE email = $1', [cleanEmail]);
+      if (result.rows.length > 0) {
+        user = result.rows[0];
+        assignedRole = 'Teacher';
+      }
+    }
+
+    // 4. Check Parents
+    if (!user) {
+      result = await db.query('SELECT * FROM parents WHERE email = $1', [cleanEmail]);
+      if (result.rows.length > 0) {
+        user = result.rows[0];
+        assignedRole = 'Parent';
+      }
+    }
+
+    // 5. Finally, check Students
+    if (!user) {
+      result = await db.query('SELECT * FROM students WHERE email = $1', [cleanEmail]);
+      if (result.rows.length > 0) {
+        user = result.rows[0];
+        assignedRole = 'Student';
+      }
+    }
+
+    // --- VERIFICATION PHASE ---
+
+    // If no user was found in ANY table
+    if (!user) return res.status(400).json({ error: "No account found with this email." });
+
+    // SPECIAL CHECK: If it is a School, ensure they are 'Active'
+    if (assignedRole === 'SchoolAdmin' && user.status !== 'Active') {
+      return res.status(403).json({ 
+        error: `Login denied. Your account status is currently: ${user.status}. Please wait for Super Admin approval.` 
+      });
+    }
+
+    // Verify Password
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) return res.status(400).json({ error: "Invalid password." });
 
-    if (role === 'SuperAdmin') {
+    // Send back the correct data AND tell the frontend what role they are
+    if (assignedRole === 'SuperAdmin') {
       res.json({ message: "Login successful!", user: { id: user.id, full_name: user.full_name, email: user.email, role: 'SuperAdmin' }});
-    } else if (role === 'Parent') {
-      res.json({ message: "Login successful!", user: { id: user.id, full_name: user.full_name, email: user.email, child_student_ids: user.child_student_ids }});
-    } else if (role === 'Teacher') {
-      res.json({ message: "Login successful!", user: { id: user.id, full_name: user.full_name, email: user.email, staff_id: user.staff_id, profile_photo_url: user.profile_photo_url }});
+    } else if (assignedRole === 'SchoolAdmin') {
+      res.json({ message: "Login successful!", user: { id: user.id, school_name: user.name, admin_name: user.admin_name, email: user.email, role: 'SchoolAdmin' }});
+    } else if (assignedRole === 'Parent') {
+      res.json({ message: "Login successful!", user: { id: user.id, full_name: user.full_name, email: user.email, role: 'Parent', child_student_ids: user.child_student_ids }});
+    } else if (assignedRole === 'Teacher') {
+      res.json({ message: "Login successful!", user: { id: user.id, full_name: user.full_name, email: user.email, role: 'Teacher', staff_id: user.staff_id, profile_photo_url: user.profile_photo_url }});
     } else {
-      res.json({ message: "Login successful!", student: { first_name: user.first_name, last_name: user.last_name, email: user.email, grade_level: user.grade_level, studentId: user.index_number, profile_photo: user.profile_photo_url }});
+      res.json({ message: "Login successful!", student: { first_name: user.first_name, last_name: user.last_name, email: user.email, role: 'Student', grade_level: user.grade_level, studentId: user.index_number, profile_photo: user.profile_photo_url }});
     }
+
   } catch (error) {
     console.error("Login Error:", error.message);
     res.status(500).json({ error: "Server error during login." });
