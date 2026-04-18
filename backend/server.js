@@ -11,7 +11,7 @@ const app = express();
 app.use(cors());
 app.use(express.json()); 
 
-// Connect to Database
+// Connect to Database (Path correctly pointing to inside current directory)
 const db = require('./config/db');
 
 // Import Controllers and Routes
@@ -43,6 +43,18 @@ app.get('/api/school-admin/:email/teachers', schoolAdminController.getTeachers);
 app.post('/api/school-admin/:email/teachers', schoolAdminController.addTeacher);
 app.put('/api/school-admin/:email/teachers/:teacherId', schoolAdminController.updateTeacher);
 
+// 5. School Admin Class Management
+app.get('/api/school-admin/:email/classes', schoolAdminController.getClasses);
+app.post('/api/school-admin/:email/classes', schoolAdminController.addClass);
+
+// 6. Master Timetable Management
+app.get('/api/school-admin/:email/classes/:classId/timetable', schoolAdminController.getClassTimetable);
+app.post('/api/school-admin/:email/classes/:classId/timetable', schoolAdminController.saveTimetableSlot);
+app.get('/api/school-admin/:email/teachers/:teacherId/timetable', schoolAdminController.getTeacherTimetable);
+
+// 7. Messaging System
+app.post('/api/school-admin/:email/messages/send', schoolAdminController.sendStaffMessage);
+app.get('/api/teachers/:teacherId/messages', schoolAdminController.getTeacherMessages);
 
 // --- AUTHENTICATION ROUTES ---
 
@@ -100,7 +112,9 @@ app.post('/api/auth/login', async (req, res) => {
 
     // --- VERIFICATION PHASE ---
 
-    if (!user) return res.status(400).json({ error: "No account found with this email." });
+    if (!user) {
+      return res.status(400).json({ error: "No account found with this email." });
+    }
 
     if (assignedRole === 'SchoolAdmin' && user.status !== 'Active') {
       return res.status(403).json({ 
@@ -109,7 +123,9 @@ app.post('/api/auth/login', async (req, res) => {
     }
 
     const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) return res.status(400).json({ error: "Invalid password." });
+    if (!isMatch) {
+      return res.status(400).json({ error: "Invalid password." });
+    }
 
     if (assignedRole === 'SuperAdmin') {
       res.json({ message: "Login successful!", user: { id: user.id, full_name: user.full_name, email: user.email, role: 'SuperAdmin' }});
@@ -164,7 +180,9 @@ app.post('/api/auth/register', async (req, res) => {
       return res.status(400).json({ error: "Invalid role selected." });
     }
   } catch (error) {
-    if (error.code === '23505') return res.status(400).json({ error: "Email or ID already exists." });
+    if (error.code === '23505') {
+      return res.status(400).json({ error: "Email or ID already exists." });
+    }
     res.status(500).json({ error: "Server error during registration." });
   }
 });
@@ -175,13 +193,19 @@ app.post('/api/profile/upload-avatar', upload.single('photo'), async (req, res) 
   try {
     const { studentId } = req.body;
     const file = req.file;
-    if (!file) return res.status(400).json({ error: "No photo uploaded." });
+    
+    if (!file) {
+      return res.status(400).json({ error: "No photo uploaded." });
+    }
 
     const fileExt = file.originalname ? file.originalname.split('.').pop() : 'jpg';
     const fileName = `${studentId}_${Date.now()}.${fileExt}`;
 
     const { error: uploadError } = await supabase.storage.from('avatars').upload(fileName, file.buffer, { contentType: file.mimetype, upsert: true });
-    if (uploadError) throw uploadError;
+    
+    if (uploadError) {
+      throw uploadError;
+    }
 
     const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(fileName);
     await db.query('UPDATE students SET profile_photo_url = $1 WHERE index_number = $2', [publicUrl, studentId]);
@@ -196,7 +220,11 @@ app.get('/api/profile/:studentId', async (req, res) => {
   try {
     const { studentId } = req.params;
     const result = await db.query('SELECT first_name, last_name, email, grade_level, profile_photo_url FROM students WHERE index_number = $1', [studentId]);
-    if (result.rows.length === 0) return res.status(404).json({ error: "Student not found" });
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Student not found" });
+    }
+    
     res.json(result.rows[0]);
   } catch (error) {
     res.status(500).json({ error: "Server error fetching profile." });
@@ -207,7 +235,11 @@ app.get('/api/parents/:email', async (req, res) => {
   try {
     const { email } = req.params;
     const result = await db.query('SELECT full_name, email, phone_number, child_student_ids, profile_photo_url FROM parents WHERE email = $1', [email.toLowerCase().trim()]);
-    if (result.rows.length === 0) return res.status(404).json({ error: "Parent not found" });
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Parent not found" });
+    }
+    
     res.json({ user: result.rows[0] });
   } catch (error) {
     res.status(500).json({ error: "Server error fetching parent profile." });
@@ -221,7 +253,11 @@ app.put('/api/parents/update', async (req, res) => {
       `UPDATE parents SET full_name = $1, phone_number = $2, child_student_ids = $3, profile_photo_url = $4 WHERE email = $5 RETURNING *`,
       [full_name, phone_number, child_student_ids, profile_photo_url, email.toLowerCase().trim()]
     );
-    if (result.rows.length === 0) return res.status(404).json({ error: "Parent not found" });
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Parent not found" });
+    }
+    
     res.json({ message: "Profile updated successfully", user: result.rows[0] });
   } catch (error) {
     res.status(500).json({ error: "Server error updating parent profile." });
@@ -231,5 +267,5 @@ app.put('/api/parents/update', async (req, res) => {
 // --- START THE SERVER ---
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
+  console.log(`🚀 Server is running on port ${PORT}`);
 });

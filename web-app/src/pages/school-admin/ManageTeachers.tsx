@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Search, Plus, Mail, Phone, X, Users, BookOpen, CheckCircle, XCircle, Eye, UserCheck, Briefcase, AlertCircle, MessageSquare, Send, AlignLeft, CalendarDays, MapPin, Edit3, Save, Trash2, Edit2 } from 'lucide-react';
+import { Search, Plus, Mail, Phone, X, Users, BookOpen, CheckCircle, XCircle, Eye, UserCheck, Briefcase, AlertCircle, MessageSquare, Send, AlignLeft, CalendarDays, MapPin, Edit2 } from 'lucide-react';
 
 const subjectOptions: Record<string, string[]> = {
   "O/L": ["Mathematics", "Science", "English", "Sinhala", "Tamil", "History", "Religion", "ICT", "Business & Accounting"],
@@ -9,25 +9,33 @@ const subjectOptions: Record<string, string[]> = {
   "Arts Section": ["Sinhala", "Tamil", "English", "Geography", "History", "Logic", "Political Science"]
 };
 
-// --- MOCK TIMETABLE GENERATOR ---
-const generateMockTimetable = (subject: string) => {
+// --- NEW REAL TIMETABLE FORMATTER ---
+const formatTeacherTimetable = (dbTimetable: any[]) => {
   const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
   const periods = [
-    { id: 1, time: '08:00 - 08:40' }, { id: 2, time: '08:40 - 09:20' }, 
-    { id: 'break', time: '09:20 - 09:40', label: 'Interval' },
-    { id: 3, time: '09:40 - 10:20' }, { id: 4, time: '10:20 - 11:00' },
-    { id: 5, time: '11:00 - 11:40' }, { id: 6, time: '11:40 - 12:20' },
-    { id: 7, time: '12:20 - 01:00' }, { id: 8, time: '01:00 - 01:40' }
+    { p: 1, time: '08:00 - 08:40', isBreak: false }, { p: 2, time: '08:40 - 09:20', isBreak: false },
+    { p: -1, time: '09:20 - 09:40', isBreak: true, label: 'INTERVAL' },
+    { p: 3, time: '09:40 - 10:20', isBreak: false }, { p: 4, time: '10:20 - 11:00', isBreak: false },
+    { p: 5, time: '11:00 - 11:40', isBreak: false }, { p: 6, time: '11:40 - 12:20', isBreak: false },
+    { p: 7, time: '12:20 - 01:00', isBreak: false }, { p: 8, time: '01:00 - 01:40', isBreak: false }
   ];
 
   return periods.map(period => {
-    if (period.id === 'break') return { ...period, isBreak: true };
-    const row: any = { ...period, isBreak: false, days: {} };
+    if (period.isBreak) return period;
+    
+    const row: any = { ...period, days: {} };
     days.forEach(day => {
-      if (Math.random() > 0.6) {
-        row.days[day] = { class: `Grade ${Math.floor(Math.random() * 4) + 10} - A`, subject: subject || "Subject", room: `Room ${Math.floor(Math.random() * 100) + 100}` };
+      // Find if the teacher has a class assigned for this exact day and period
+      const assignedClass = dbTimetable.find(slot => slot.day_of_week === day && slot.period_number === period.p);
+      
+      if (assignedClass) {
+        row.days[day] = { 
+          class: `${assignedClass.grade} - ${assignedClass.section}`, 
+          subject: assignedClass.subject, 
+          room: assignedClass.room_number || "TBD" 
+        };
       } else {
-        row.days[day] = null;
+        row.days[day] = null; // Free Period
       }
     });
     return row;
@@ -51,15 +59,12 @@ export default function ManageTeachers() {
   const [selectedTeacher, setSelectedTeacher] = useState<any | null>(null);
   const [activeProfileTab, setActiveProfileTab] = useState<'profile' | 'timetable'>('profile');
   
+  // Real Timetable State
   const [timetableData, setTimetableData] = useState<any[]>([]);
-  const [isEditingTimetable, setIsEditingTimetable] = useState(false);
-  const [editingSlot, setEditingSlot] = useState<{ pIndex: number, day: string } | null>(null);
-  const [slotForm, setSlotForm] = useState({ class: '', subject: '', room: '' });
   
   const [isMessageModalOpen, setIsMessageModalOpen] = useState(false);
   const [messageForm, setMessageForm] = useState({ recipientType: 'all', targetSection: '', targetTeacherId: '', subject: '', messageBody: '' });
   
-  // Shared form data for Add and Edit
   const [formData, setFormData] = useState({ fullName: '', staffId: '', email: '', phone: '', department: '', subject: '', medium: '', status: 'Active' });
 
   useEffect(() => {
@@ -97,28 +102,27 @@ export default function ManageTeachers() {
     }
   };
 
+  const fetchTeacherTimetable = async (teacherDbId: string) => {
+    try {
+      const res = await fetch(`http://localhost:5000/api/school-admin/${adminEmail}/teachers/${teacherDbId}/timetable`);
+      if (res.ok) {
+        const data = await res.json();
+        // Convert flat DB rows into our beautiful UI grid
+        setTimetableData(formatTeacherTimetable(data));
+      }
+    } catch (err) {
+      console.error("Failed to fetch timetable", err);
+    }
+  };
+
   const handleAddTeacher = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-
-    const payload = {
-      fullName: formData.fullName,
-      teacherEmail: formData.email,
-      phone: formData.phone,
-      staffId: formData.staffId,
-      department: formData.department,
-      subject: formData.subject,
-      medium: formData.medium,
-      password: "welcome123" 
-    };
-
+    const payload = { ...formData, teacherEmail: formData.email, password: "welcome123" };
     try {
       const response = await fetch(`http://localhost:5000/api/school-admin/${adminEmail}/teachers`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
       });
-      
       if (response.ok) {
         setIsAddModalOpen(false);
         setFormData({ fullName: '', staffId: '', email: '', phone: '', department: '', subject: '', medium: '', status: 'Active' });
@@ -127,22 +131,14 @@ export default function ManageTeachers() {
         const data = await response.json();
         setError(data.error || "Failed to add teacher.");
       }
-    } catch (err) {
-      setError("Server connection error.");
-    }
+    } catch (err) { setError("Server connection error."); }
   };
 
   const handleOpenEditModal = (teacher: any) => {
     setEditingDbId(teacher.dbId);
     setFormData({
-      fullName: teacher.name,
-      staffId: teacher.id,
-      email: teacher.email,
-      phone: teacher.phone === "N/A" ? "" : teacher.phone,
-      department: teacher.department,
-      subject: teacher.subject === "Not Assigned" ? "" : teacher.subject,
-      medium: teacher.medium,
-      status: teacher.status
+      fullName: teacher.name, staffId: teacher.id, email: teacher.email, phone: teacher.phone === "N/A" ? "" : teacher.phone,
+      department: teacher.department, subject: teacher.subject === "Not Assigned" ? "" : teacher.subject, medium: teacher.medium, status: teacher.status
     });
     setIsEditModalOpen(true);
   };
@@ -150,63 +146,69 @@ export default function ManageTeachers() {
   const handleUpdateTeacher = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-
-    const payload = {
-      fullName: formData.fullName,
-      teacherEmail: formData.email,
-      phone: formData.phone,
-      staffId: formData.staffId,
-      department: formData.department,
-      subject: formData.subject,
-      medium: formData.medium,
-      status: formData.status
-    };
-
+    const payload = { ...formData, teacherEmail: formData.email };
     try {
       const response = await fetch(`http://localhost:5000/api/school-admin/${adminEmail}/teachers/${editingDbId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
       });
-      
       if (response.ok) {
         setIsEditModalOpen(false);
         setEditingDbId(null);
         setFormData({ fullName: '', staffId: '', email: '', phone: '', department: '', subject: '', medium: '', status: 'Active' });
-        fetchTeachers(adminEmail);
+        fetchTeachers(adminEmail); 
       } else {
         const data = await response.json();
         setError(data.error || "Failed to update teacher.");
       }
-    } catch (err) {
-      setError("Server connection error.");
-    }
+    } catch (err) { setError("Server connection error."); }
   };
 
   const handleStatusToggle = async (dbId: string, currentStatus: string) => {
     const newStatus = currentStatus === 'Active' ? 'Inactive' : 'Active';
     setTeachers(teachers.map(t => t.dbId === dbId ? { ...t, status: newStatus } : t));
-    
     const teacherToUpdate = teachers.find(t => t.dbId === dbId);
     if (!teacherToUpdate) return;
-
     try {
       await fetch(`http://localhost:5000/api/school-admin/${adminEmail}/teachers/${dbId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          fullName: teacherToUpdate.name,
-          teacherEmail: teacherToUpdate.email,
-          phone: teacherToUpdate.phone === "N/A" ? "" : teacherToUpdate.phone,
-          staffId: teacherToUpdate.id,
-          department: teacherToUpdate.department,
-          subject: teacherToUpdate.subject === "Not Assigned" ? "" : teacherToUpdate.subject,
-          medium: teacherToUpdate.medium,
-          status: newStatus
+          fullName: teacherToUpdate.name, teacherEmail: teacherToUpdate.email, phone: teacherToUpdate.phone === "N/A" ? "" : teacherToUpdate.phone,
+          staffId: teacherToUpdate.id, department: teacherToUpdate.department, subject: teacherToUpdate.subject === "Not Assigned" ? "" : teacherToUpdate.subject,
+          medium: teacherToUpdate.medium, status: newStatus 
         }),
       });
+    } catch (err) { console.error("Failed to update status", err); }
+  };
+
+  const handleViewProfile = (teacher: any) => {
+    setSelectedTeacher(teacher);
+    setActiveProfileTab('profile');
+    // Clear old timetable instantly, then fetch the real one
+    setTimetableData(formatTeacherTimetable([])); 
+    fetchTeacherTimetable(teacher.dbId);
+  };
+
+  // --- NEW SMART MESSAGING FUNCTION ---
+  const handleSendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const response = await fetch(`http://localhost:5000/api/school-admin/${adminEmail}/messages/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(messageForm),
+      });
+
+      if (response.ok) {
+        setIsMessageModalOpen(false);
+        // Reset the form so it's clean for next time
+        setMessageForm({ recipientType: 'all', targetSection: '', targetTeacherId: '', subject: '', messageBody: '' });
+        alert("Message successfully dispatched to staff!"); 
+      } else {
+        alert("Failed to send message. Please try again.");
+      }
     } catch (err) {
-      console.error("Failed to update status", err);
+      console.error("Messaging Error", err);
+      alert("Server connection error.");
     }
   };
 
@@ -215,42 +217,6 @@ export default function ManageTeachers() {
     const matchesDept = deptFilter === 'all' || teacher.department.toLowerCase() === deptFilter.toLowerCase();
     return matchesSearch && matchesDept;
   });
-
-  const openMessageModal = (type: string, teacherId?: string) => {
-    setMessageForm({ ...messageForm, recipientType: type, targetTeacherId: teacherId || '', targetSection: '', subject: '', messageBody: '' });
-    setIsMessageModalOpen(true);
-  };
-
-  const handleViewProfile = (teacher: any) => {
-    setSelectedTeacher(teacher);
-    setActiveProfileTab('profile');
-    setIsEditingTimetable(false);
-    setTimetableData(generateMockTimetable(teacher.subject)); 
-  };
-
-  const handleSlotClick = (pIndex: number, day: string, currentData: any) => {
-    if (!isEditingTimetable) return;
-    setEditingSlot({ pIndex, day });
-    if (currentData) setSlotForm(currentData);
-    else setSlotForm({ class: '', subject: selectedTeacher.subject, room: '' });
-  };
-
-  const handleSaveSlot = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editingSlot) return;
-    const newData = [...timetableData];
-    newData[editingSlot.pIndex].days[editingSlot.day] = { ...slotForm };
-    setTimetableData(newData);
-    setEditingSlot(null);
-  };
-
-  const handleClearSlot = () => {
-    if (!editingSlot) return;
-    const newData = [...timetableData];
-    newData[editingSlot.pIndex].days[editingSlot.day] = null;
-    setTimetableData(newData);
-    setEditingSlot(null);
-  };
 
   return (
     <div className="space-y-6 relative">
@@ -262,7 +228,7 @@ export default function ManageTeachers() {
           <p className="text-sm text-slate-500 font-medium">Add, update, and manage teacher profiles and access.</p>
         </div>
         <div className="flex w-full sm:w-auto gap-3">
-          <button onClick={() => openMessageModal('all')} className="flex-1 sm:flex-none bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 transition-colors shadow-sm">
+          <button onClick={() => setIsMessageModalOpen(true)} className="flex-1 sm:flex-none bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 transition-colors shadow-sm">
             <MessageSquare size={18} /> Message Staff
           </button>
           <button onClick={() => { setFormData({ fullName: '', staffId: '', email: '', phone: '', department: '', subject: '', medium: '', status: 'Active' }); setIsAddModalOpen(true); }} className="flex-1 sm:flex-none bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 transition-colors shadow-sm">
@@ -336,7 +302,7 @@ export default function ManageTeachers() {
                         <button onClick={() => handleViewProfile(teacher)} className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors" title="View Profile">
                           <Eye size={18} />
                         </button>
-                        <button onClick={() => openMessageModal('individual', teacher.id)} className="p-1.5 text-slate-400 hover:text-purple-600 hover:bg-purple-50 rounded-md transition-colors" title="Message Teacher">
+                        <button onClick={() => {setMessageForm({...messageForm, recipientType: 'individual', targetTeacherId: teacher.id}); setIsMessageModalOpen(true);}} className="p-1.5 text-slate-400 hover:text-purple-600 hover:bg-purple-50 rounded-md transition-colors" title="Message Teacher">
                           <MessageSquare size={18} />
                         </button>
                         <button onClick={() => handleOpenEditModal(teacher)} className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-md transition-colors" title="Edit Teacher">
@@ -453,6 +419,163 @@ export default function ManageTeachers() {
         </div>
       )}
 
+      {/* --- TEACHER PROFILE & TIMETABLE VIEW MODAL --- */}
+      {selectedTeacher && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl overflow-hidden flex flex-col max-h-[90vh]">
+            
+            {/* Modal Header */}
+            <div className="bg-slate-50 border-b border-slate-100 p-6 flex justify-between items-start shrink-0">
+              <div className="flex items-center gap-4">
+                <div className="w-16 h-16 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 text-2xl font-bold border-4 border-white shadow-sm shrink-0 uppercase">
+                  {selectedTeacher.name.split(' ').map((n: string) => n[0]).join('')}
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-slate-800">{selectedTeacher.name}</h2>
+                  <p className="text-sm font-semibold text-slate-500">Staff ID: {selectedTeacher.id}</p>
+                  <span className={`inline-block mt-2 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                    selectedTeacher.status === 'Active' ? 'bg-emerald-100 text-emerald-700' : 
+                    selectedTeacher.status === 'On Leave' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'
+                  }`}>
+                    {selectedTeacher.status}
+                  </span>
+                </div>
+              </div>
+              <button onClick={() => setSelectedTeacher(null)} className="text-slate-400 hover:text-slate-600 hover:bg-slate-200 p-2 rounded-full transition-colors"><X size={20} /></button>
+            </div>
+
+            {/* Navigation Tabs */}
+            <div className="flex border-b border-slate-200 px-6 shrink-0 bg-white">
+              <button onClick={() => setActiveProfileTab('profile')} className={`py-3 px-4 text-sm font-bold border-b-2 transition-colors ${activeProfileTab === 'profile' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
+                Profile Details
+              </button>
+              <button onClick={() => setActiveProfileTab('timetable')} className={`py-3 px-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeProfileTab === 'timetable' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
+                <CalendarDays size={16} /> Weekly Timetable
+              </button>
+            </div>
+
+            {/* Scrollable Content Area */}
+            <div className="p-6 overflow-y-auto flex-1 bg-white relative">
+              
+              {/* TAB 1: PROFILE DETAILS */}
+              {activeProfileTab === 'profile' && (
+                <div className="space-y-6 animate-in fade-in duration-300">
+                  {selectedTeacher.status === 'On Leave' && (
+                    <div className="bg-amber-50 rounded-xl border border-amber-100 p-4">
+                      <h3 className="text-sm font-bold text-amber-800 mb-1 flex items-center gap-2">
+                        <AlertCircle size={16} /> Leave Information
+                      </h3>
+                      <p className="text-sm font-medium text-amber-800 mt-1 pl-6">
+                        Teacher is currently marked as on leave. Timetable assignments may need covering.
+                      </p>
+                    </div>
+                  )}
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-800 mb-3 border-b border-slate-100 pb-2 flex items-center gap-2">
+                      <Briefcase size={16} className="text-blue-500" /> Academic Profile
+                    </h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Section</p>
+                        <p className="font-bold text-slate-700 mt-0.5 text-sm truncate">{selectedTeacher.department}</p>
+                      </div>
+                      <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Subject</p>
+                        <p className="font-bold text-blue-700 mt-0.5 text-sm truncate">{selectedTeacher.subject}</p>
+                      </div>
+                      <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Medium</p>
+                        <p className="font-bold text-slate-700 mt-0.5 text-sm truncate">{selectedTeacher.medium}</p>
+                      </div>
+                    </div>
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-800 mb-3 border-b border-slate-100 pb-2 flex items-center gap-2">
+                      <UserCheck size={16} className="text-emerald-500" /> Contact Information
+                    </h3>
+                    <div className="bg-slate-50 rounded-xl border border-slate-100 p-4 space-y-3">
+                      <div className="flex items-center gap-3">
+                        <Mail size={16} className="text-slate-400" />
+                        <div>
+                          <p className="text-xs text-slate-500 font-medium">Email Address</p>
+                          <p className="text-sm font-bold text-slate-800">{selectedTeacher.email}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <Phone size={16} className="text-slate-400" />
+                        <div>
+                          <p className="text-xs text-slate-500 font-medium">Phone Number</p>
+                          <p className="text-sm font-bold text-slate-800">{selectedTeacher.phone}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 2: DYNAMIC READ-ONLY TIMETABLE */}
+              {activeProfileTab === 'timetable' && (
+                <div className="animate-in fade-in duration-300 flex flex-col h-full">
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-sm font-bold text-slate-800">Assigned Schedule</h3>
+                    <p className="text-xs text-slate-500 italic">Timetables are managed via the Classes page.</p>
+                  </div>
+
+                  <div className="border border-slate-200 rounded-xl overflow-hidden">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse min-w-[700px]">
+                        <thead>
+                          <tr className="bg-slate-50 border-b border-slate-200">
+                            <th className="p-3 text-xs font-bold text-slate-500 uppercase tracking-wider border-r border-slate-200 w-24 text-center">Time</th>
+                            {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'].map(day => (
+                              <th key={day} className="p-3 text-xs font-bold text-slate-700 uppercase tracking-wider border-r border-slate-200 text-center w-1/5">{day}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {timetableData.map((row, pIndex) => (
+                            row.isBreak ? (
+                              <tr key={pIndex} className="bg-amber-50/50 border-b border-slate-100">
+                                <td className="p-2 text-xs font-semibold text-amber-700 text-center border-r border-slate-200 whitespace-nowrap">{row.time}</td>
+                                <td colSpan={5} className="p-2 text-xs font-bold text-amber-600 text-center uppercase tracking-[0.2em]">{row.label}</td>
+                              </tr>
+                            ) : (
+                              <tr key={pIndex} className="border-b border-slate-100">
+                                <td className="p-2 text-[10px] font-semibold text-slate-500 text-center border-r border-slate-200 whitespace-nowrap bg-slate-50">{row.time}</td>
+                                {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'].map(day => {
+                                  const slot = row.days[day];
+                                  return (
+                                    <td key={day} className="p-1.5 border-r border-slate-100 last:border-none">
+                                      {slot ? (
+                                        <div className="bg-blue-50 border border-blue-100 rounded-lg p-2 h-full flex flex-col justify-center items-center text-center">
+                                          <p className="text-xs font-bold text-blue-800">{slot.class}</p>
+                                          <p className="text-[10px] font-semibold text-blue-600 mt-0.5">{slot.subject}</p>
+                                          <div className="flex items-center gap-1 mt-1 text-[9px] font-medium text-slate-500">
+                                            <MapPin size={10} /> {slot.room}
+                                          </div>
+                                        </div>
+                                      ) : (
+                                        <div className="h-full min-h-[65px] flex items-center justify-center rounded-lg border-2 border-transparent text-slate-300">
+                                          <span className="text-[10px] font-medium">- Free -</span>
+                                        </div>
+                                      )}
+                                    </td>
+                                  );
+                                })}
+                              </tr>
+                            )
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* --- SMART MESSAGING MODAL --- */}
       {isMessageModalOpen && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
@@ -468,7 +591,7 @@ export default function ManageTeachers() {
               <button onClick={() => setIsMessageModalOpen(false)} className="text-slate-400 hover:text-slate-600 hover:bg-slate-200 p-2 rounded-full transition-colors"><X size={20} /></button>
             </div>
             <div className="p-6">
-              <form id="compose-message-form" onSubmit={(e) => { e.preventDefault(); setIsMessageModalOpen(false); }} className="space-y-4">
+              <form id="compose-message-form" onSubmit={handleSendMessage} className="space-y-4">
                 <div className="flex flex-col gap-1.5">
                   <label className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Send To</label>
                   <select 
@@ -519,220 +642,6 @@ export default function ManageTeachers() {
               </button>
             </div>
           </div>
-        </div>
-      )}
-
-      {/* --- TEACHER PROFILE & TIMETABLE VIEW MODAL --- */}
-      {selectedTeacher && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl overflow-hidden flex flex-col max-h-[90vh]">
-            
-            <div className="bg-slate-50 border-b border-slate-100 p-6 flex justify-between items-start shrink-0">
-              <div className="flex items-center gap-4">
-                <div className="w-16 h-16 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 text-2xl font-bold border-4 border-white shadow-sm shrink-0 uppercase">
-                  {selectedTeacher.name.split(' ').map((n: string) => n[0]).join('')}
-                </div>
-                <div>
-                  <h2 className="text-xl font-bold text-slate-800">{selectedTeacher.name}</h2>
-                  <p className="text-sm font-semibold text-slate-500">Staff ID: {selectedTeacher.id}</p>
-                  <span className={`inline-block mt-2 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                    selectedTeacher.status === 'Active' ? 'bg-emerald-100 text-emerald-700' : 
-                    selectedTeacher.status === 'On Leave' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'
-                  }`}>
-                    {selectedTeacher.status}
-                  </span>
-                </div>
-              </div>
-              <button onClick={() => {setSelectedTeacher(null); setIsEditingTimetable(false);}} className="text-slate-400 hover:text-slate-600 hover:bg-slate-200 p-2 rounded-full transition-colors"><X size={20} /></button>
-            </div>
-
-            <div className="flex border-b border-slate-200 px-6 shrink-0 bg-white">
-              <button onClick={() => {setActiveProfileTab('profile'); setIsEditingTimetable(false);}} className={`py-3 px-4 text-sm font-bold border-b-2 transition-colors ${activeProfileTab === 'profile' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
-                Profile Details
-              </button>
-              <button onClick={() => setActiveProfileTab('timetable')} className={`py-3 px-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeProfileTab === 'timetable' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
-                <CalendarDays size={16} /> Weekly Timetable
-              </button>
-            </div>
-
-            <div className="p-6 overflow-y-auto flex-1 bg-white relative">
-              
-              {activeProfileTab === 'profile' && (
-                <div className="space-y-6 animate-in fade-in duration-300">
-                  {selectedTeacher.status === 'On Leave' && (
-                    <div className="bg-amber-50 rounded-xl border border-amber-100 p-4">
-                      <h3 className="text-sm font-bold text-amber-800 mb-1 flex items-center gap-2">
-                        <AlertCircle size={16} /> Leave Information
-                      </h3>
-                      <p className="text-sm font-medium text-amber-800 mt-1 pl-6">
-                        {selectedTeacher.leaveReason || "Leave reason not specified."}
-                      </p>
-                    </div>
-                  )}
-                  <div>
-                    <h3 className="text-sm font-bold text-slate-800 mb-3 border-b border-slate-100 pb-2 flex items-center gap-2">
-                      <Briefcase size={16} className="text-blue-500" /> Academic Profile
-                    </h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                      <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Section</p>
-                        <p className="font-bold text-slate-700 mt-0.5 text-sm truncate">{selectedTeacher.department}</p>
-                      </div>
-                      <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Subject</p>
-                        <p className="font-bold text-blue-700 mt-0.5 text-sm truncate">{selectedTeacher.subject}</p>
-                      </div>
-                      <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Medium</p>
-                        <p className="font-bold text-slate-700 mt-0.5 text-sm truncate">{selectedTeacher.medium}</p>
-                      </div>
-                    </div>
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-bold text-slate-800 mb-3 border-b border-slate-100 pb-2 flex items-center gap-2">
-                      <UserCheck size={16} className="text-emerald-500" /> Contact Information
-                    </h3>
-                    <div className="bg-slate-50 rounded-xl border border-slate-100 p-4 space-y-3">
-                      <div className="flex items-center gap-3">
-                        <Mail size={16} className="text-slate-400" />
-                        <div>
-                          <p className="text-xs text-slate-500 font-medium">Email Address</p>
-                          <p className="text-sm font-bold text-slate-800">{selectedTeacher.email}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <Phone size={16} className="text-slate-400" />
-                        <div>
-                          <p className="text-xs text-slate-500 font-medium">Phone Number</p>
-                          <p className="text-sm font-bold text-slate-800">{selectedTeacher.phone}</p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {activeProfileTab === 'timetable' && (
-                <div className="animate-in fade-in duration-300 flex flex-col h-full">
-                  <div className="flex justify-between items-center mb-4">
-                    <h3 className="text-sm font-bold text-slate-800">Master Schedule</h3>
-                    <button 
-                      onClick={() => setIsEditingTimetable(!isEditingTimetable)}
-                      className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-colors ${
-                        isEditingTimetable 
-                          ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' 
-                          : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                      }`}
-                    >
-                      {isEditingTimetable ? <><Save size={16}/> Done Editing</> : <><Edit3 size={16}/> Edit Timetable</>}
-                    </button>
-                  </div>
-
-                  <div className="border border-slate-200 rounded-xl overflow-hidden">
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left border-collapse min-w-[700px]">
-                        <thead>
-                          <tr className="bg-slate-50 border-b border-slate-200">
-                            <th className="p-3 text-xs font-bold text-slate-500 uppercase tracking-wider border-r border-slate-200 w-24 text-center">Time</th>
-                            {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'].map(day => (
-                              <th key={day} className="p-3 text-xs font-bold text-slate-700 uppercase tracking-wider border-r border-slate-200 text-center w-1/5">{day}</th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {timetableData.map((row, pIndex) => (
-                            row.isBreak ? (
-                              <tr key={pIndex} className="bg-amber-50/50 border-b border-slate-100">
-                                <td className="p-2 text-xs font-semibold text-amber-700 text-center border-r border-slate-200 whitespace-nowrap">{row.time}</td>
-                                <td colSpan={5} className="p-2 text-xs font-bold text-amber-600 text-center uppercase tracking-[0.2em]">{row.label}</td>
-                              </tr>
-                            ) : (
-                              <tr key={pIndex} className="border-b border-slate-100">
-                                <td className="p-2 text-[10px] font-semibold text-slate-500 text-center border-r border-slate-200 whitespace-nowrap bg-slate-50">{row.time}</td>
-                                {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'].map(day => {
-                                  const slot = row.days[day];
-                                  return (
-                                    <td 
-                                      key={day} 
-                                      onClick={() => handleSlotClick(pIndex, day, slot)}
-                                      className={`p-1.5 border-r border-slate-100 last:border-none transition-all ${
-                                        isEditingTimetable ? 'cursor-pointer hover:bg-blue-50/50' : ''
-                                      }`}
-                                    >
-                                      {slot ? (
-                                        <div className={`bg-blue-50 border border-blue-100 rounded-lg p-2 h-full flex flex-col justify-center items-center text-center ${isEditingTimetable ? 'hover:border-blue-400 shadow-sm' : ''}`}>
-                                          <p className="text-xs font-bold text-blue-800">{slot.class}</p>
-                                          <p className="text-[10px] font-semibold text-blue-600 mt-0.5">{slot.subject}</p>
-                                          <div className="flex items-center gap-1 mt-1 text-[9px] font-medium text-slate-500">
-                                            <MapPin size={10} /> {slot.room}
-                                          </div>
-                                        </div>
-                                      ) : (
-                                        <div className={`h-full min-h-[65px] flex items-center justify-center rounded-lg border-2 border-transparent ${isEditingTimetable ? 'border-dashed border-slate-200 hover:border-blue-400 hover:bg-blue-50 text-blue-500' : 'text-slate-300'}`}>
-                                          <span className={`text-[10px] font-medium ${isEditingTimetable ? 'font-bold' : ''}`}>
-                                            {isEditingTimetable ? '+ Add Class' : '- Free -'}
-                                          </span>
-                                        </div>
-                                      )}
-                                    </td>
-                                  );
-                                })}
-                              </tr>
-                            )
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                  
-                  {isEditingTimetable && (
-                     <div className="mt-4 p-3 bg-blue-50 border border-blue-100 rounded-lg flex items-start gap-2 text-blue-700 text-xs font-medium">
-                       <AlertCircle size={14} className="shrink-0 mt-0.5" />
-                       <p>You are currently in Edit Mode. Click on any slot in the grid above to assign a class, modify the room, or mark it as a free period.</p>
-                     </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* --- SLOT EDITOR MODAL --- */}
-      {editingSlot && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4 animate-in fade-in zoom-in-95 duration-200">
-           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
-              <div className="bg-slate-50 border-b border-slate-100 p-4 flex justify-between items-center">
-                <div>
-                  <h3 className="font-bold text-slate-800">Edit Schedule Slot</h3>
-                  <p className="text-xs font-medium text-slate-500">{editingSlot.day} • {timetableData[editingSlot.pIndex].time}</p>
-                </div>
-                <button onClick={() => setEditingSlot(null)} className="text-slate-400 hover:text-slate-600 bg-slate-100 hover:bg-slate-200 p-1.5 rounded-full"><X size={16} /></button>
-              </div>
-              <div className="p-5">
-                <form id="slot-form" onSubmit={handleSaveSlot} className="space-y-4">
-                  <div className="flex flex-col gap-1.5">
-                    <label className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Class / Grade</label>
-                    <input type="text" required placeholder="e.g. Grade 10 - A" value={slotForm.class} onChange={(e) => setSlotForm({...slotForm, class: e.target.value})} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-100 focus:border-blue-500" />
-                  </div>
-                  <div className="flex flex-col gap-1.5">
-                    <label className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Subject</label>
-                    <input type="text" required placeholder="e.g. Physics" value={slotForm.subject} onChange={(e) => setSlotForm({...slotForm, subject: e.target.value})} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-100 focus:border-blue-500" />
-                  </div>
-                  <div className="flex flex-col gap-1.5">
-                    <label className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Room / Location</label>
-                    <input type="text" required placeholder="e.g. Lab 01" value={slotForm.room} onChange={(e) => setSlotForm({...slotForm, room: e.target.value})} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-100 focus:border-blue-500" />
-                  </div>
-                </form>
-              </div>
-              <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-between items-center">
-                <button type="button" onClick={handleClearSlot} className="text-xs font-bold text-red-600 hover:text-red-700 flex items-center gap-1"><Trash2 size={14}/> Clear Slot</button>
-                <div className="flex gap-2">
-                  <button onClick={() => setEditingSlot(null)} className="px-3 py-1.5 text-slate-600 text-xs font-bold hover:bg-slate-200 rounded-lg">Cancel</button>
-                  <button type="submit" form="slot-form" className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-lg text-xs font-bold shadow-sm">Save</button>
-                </div>
-              </div>
-           </div>
         </div>
       )}
     </div>
