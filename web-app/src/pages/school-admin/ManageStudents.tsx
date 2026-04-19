@@ -2,16 +2,15 @@ import { useState, useEffect } from 'react';
 import { Search, Plus, Mail, Phone, X, GraduationCap, CheckCircle, XCircle, Eye, User, BookOpen, MessageSquare, Send, AlignLeft, Users, CalendarDays, MapPin, Edit2, AlertCircle } from 'lucide-react';
 
 // --- SUBJECT MAPPING ENGINES ---
-const alStreams = ["Science Section", "Commerce Section", "Technology Section", "Arts Section"];
-
+// A/L Subjects (General English is removed from options because it is now forced as a compulsory core subject)
 const alSubjectOptions: Record<string, string[]> = {
-  "Science Section": ["Combined Mathematics", "Biology", "Physics", "Chemistry", "Agriculture", "General English", "GIT"],
-  "Commerce Section": ["Accounting", "Business Studies", "Economics", "ICT", "General English", "Business Statistics"],
-  "Technology Section": ["Engineering Technology (ET)", "Bio Systems Technology (BST)", "Science for Technology (SFT)", "ICT", "General English"],
+  "Science Section": ["Combined Mathematics", "Biology", "Physics", "Chemistry", "Agriculture", "GIT"],
+  "Commerce Section": ["Accounting", "Business Studies", "Economics", "ICT", "Business Statistics"],
+  "Technology Section": ["Engineering Technology (ET)", "Bio Systems Technology (BST)", "Science for Technology (SFT)", "ICT"],
   "Arts Section": ["Sinhala", "Tamil", "English", "Geography", "History", "Logic", "Political Science", "Media Studies", "Dancing", "Art", "Drama"]
 };
 
-// O/L Subject Buckets (As per exact requirements)
+// O/L Subject Buckets
 const olCoreSubjects = ["Sinhala", "Science", "Mathematics", "History", "English"];
 const olReligions = ["Buddhism", "Catholicism", "Christianity", "Islam"];
 const olBucket1 = ["Dancing", "Art", "Music", "English Literature", "Sinhala Literature", "Drama"];
@@ -47,7 +46,6 @@ const formatStudentTimetable = (dbTimetable: any[], studentSubjects: string[]) =
 export default function ManageStudents() {
   const [adminEmail, setAdminEmail] = useState('');
   const [students, setStudents] = useState<any[]>([]);
-  const [schoolClasses, setSchoolClasses] = useState<any[]>([]); 
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -64,9 +62,8 @@ export default function ManageStudents() {
   const [formMode, setFormMode] = useState<'add' | 'edit'>('add');
   const [editingDbId, setEditingDbId] = useState<string | null>(null);
 
-  // New Subject Engine States
+  // Subject Engine States
   const [olSelections, setOlSelections] = useState({ religion: '', b1: '', b2: '', b3: '' });
-  const [alStream, setAlStream] = useState('');
 
   const [formData, setFormData] = useState<{
     firstName: string; lastName: string; studentEmail: string; studentId: string; 
@@ -87,7 +84,6 @@ export default function ManageStudents() {
       const parsedUser = JSON.parse(storedUser);
       setAdminEmail(parsedUser.email);
       fetchStudents(parsedUser.email);
-      fetchClasses(parsedUser.email);
     }
   }, []);
 
@@ -105,13 +101,6 @@ export default function ManageStudents() {
         setStudents(formattedStudents);
       }
     } catch (err) { console.error(err); } finally { setIsLoading(false); }
-  };
-
-  const fetchClasses = async (email: string) => {
-    try {
-      const res = await fetch(`http://localhost:5000/api/school-admin/${email}/classes`);
-      if (res.ok) setSchoolClasses(await res.json());
-    } catch (err) { console.error(err); }
   };
 
   const fetchStudentTimetable = async (studentDbId: string, studentSubjects: string[]) => {
@@ -139,25 +128,20 @@ export default function ManageStudents() {
   };
 
   // --- DYNAMIC FORM HANDLERS ---
-  const uniqueGrades = Array.from(new Set(schoolClasses.map(c => c.grade))).sort();
-  const availableSectionsForGrade = schoolClasses.filter(c => c.grade === formData.grade).map(c => c.section);
-  
   const isOL = formData.grade === 'Grade 10' || formData.grade === 'Grade 11';
   const isAL = formData.grade === 'Grade 12' || formData.grade === 'Grade 13';
 
   const handleGradeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const newGrade = e.target.value;
-    const sections = schoolClasses.filter(c => c.grade === newGrade).map(c => c.section);
-    setFormData({ ...formData, grade: newGrade, section: sections.length === 1 ? sections[0] : '', subjects: [] });
+    setFormData({ ...formData, grade: newGrade, section: '', subjects: [] });
     setOlSelections({ religion: '', b1: '', b2: '', b3: '' });
-    setAlStream('');
   };
 
   const handleSectionChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     setFormData({ ...formData, section: e.target.value, subjects: [] });
   };
 
-  const handleAlSubjectToggle = (subject: string) => {
+  const handleSubjectToggle = (subject: string) => {
     setFormData(prev => {
       const isSelected = prev.subjects.includes(subject);
       if (isSelected) return { ...prev, subjects: prev.subjects.filter(s => s !== subject) };
@@ -168,35 +152,31 @@ export default function ManageStudents() {
   const openAddModal = () => {
     setFormMode('add'); setEditingDbId(null);
     setFormData({ firstName: '', lastName: '', studentEmail: '', studentId: '', grade: '', section: '', medium: '', subjects: [], parentEmail: '', parentPhone: '', status: 'Active' });
-    setOlSelections({ religion: '', b1: '', b2: '', b3: '' }); setAlStream('');
+    setOlSelections({ religion: '', b1: '', b2: '', b3: '' });
     setIsFormModalOpen(true);
   };
 
   const openEditModal = (student: any) => {
     setFormMode('edit'); setEditingDbId(student.dbId);
     
-    let parsedReligion = '', parsedB1 = '', parsedB2 = '', parsedB3 = '', parsedAlStream = '';
+    let parsedReligion = '', parsedB1 = '', parsedB2 = '', parsedB3 = '';
+    let activeSubjects = student.subjects || [];
 
     if (student.grade === 'Grade 10' || student.grade === 'Grade 11') {
-      parsedReligion = student.subjects.find((s: string) => olReligions.includes(s)) || '';
-      parsedB1 = student.subjects.find((s: string) => olBucket1.includes(s)) || '';
-      parsedB2 = student.subjects.find((s: string) => olBucket2.includes(s)) || '';
-      parsedB3 = student.subjects.find((s: string) => olBucket3.includes(s)) || '';
+      parsedReligion = activeSubjects.find((s: string) => olReligions.includes(s)) || '';
+      parsedB1 = activeSubjects.find((s: string) => olBucket1.includes(s)) || '';
+      parsedB2 = activeSubjects.find((s: string) => olBucket2.includes(s)) || '';
+      parsedB3 = activeSubjects.find((s: string) => olBucket3.includes(s)) || '';
     } else {
-      // Find which A/L stream they belong to based on their subjects
-      for (const stream of alStreams) {
-        if (student.subjects.some((sub: string) => alSubjectOptions[stream].includes(sub))) {
-          parsedAlStream = stream; break;
-        }
-      }
+      // For A/L, we filter out 'General English' from the toggleable buttons because it's forced
+      activeSubjects = activeSubjects.filter((s: string) => s !== "General English");
     }
 
     setOlSelections({ religion: parsedReligion, b1: parsedB1, b2: parsedB2, b3: parsedB3 });
-    setAlStream(parsedAlStream);
 
     setFormData({
       firstName: student.firstName, lastName: student.lastName, studentId: student.id, studentEmail: student.studentEmail, 
-      grade: student.grade, section: student.section, medium: student.medium, subjects: student.subjects || [],
+      grade: student.grade, section: student.section, medium: student.medium, subjects: activeSubjects,
       parentEmail: student.parentEmail === "N/A" ? "" : student.parentEmail, parentPhone: student.parentPhone === "N/A" ? "" : student.parentPhone, status: student.status
     });
     setIsFormModalOpen(true);
@@ -211,6 +191,9 @@ export default function ManageStudents() {
     let finalSubjects = formData.subjects;
     if (isOL) {
       finalSubjects = [...olCoreSubjects, olSelections.religion, olSelections.b1, olSelections.b2, olSelections.b3].filter(Boolean);
+    } else if (isAL) {
+      // Force General English into the array for A/L students
+      finalSubjects = ["General English", ...formData.subjects].filter(Boolean);
     }
 
     const payload = { ...formData, subjects: finalSubjects };
@@ -286,7 +269,10 @@ export default function ManageStudents() {
         </div>
         <select value={gradeFilter} onChange={(e) => setGradeFilter(e.target.value)} className="px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 text-slate-700 font-medium text-sm">
           <option value="all">All Grades</option>
-          {uniqueGrades.map(g => <option key={g} value={g as string}>{g as string}</option>)}
+          <option value="Grade 10">Grade 10 (O/L)</option>
+          <option value="Grade 11">Grade 11 (O/L)</option>
+          <option value="Grade 12">Grade 12 (A/L)</option>
+          <option value="Grade 13">Grade 13 (A/L)</option>
         </select>
       </div>
 
@@ -534,15 +520,26 @@ export default function ManageStudents() {
                       <label className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Grade</label>
                       <select required value={formData.grade} onChange={handleGradeChange} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-100 focus:border-blue-500 text-sm text-slate-700">
                         <option value="" disabled>Select Grade</option>
-                        {uniqueGrades.map(g => <option key={g as string} value={g as string}>{g as string}</option>)}
+                        <option value="Grade 10">Grade 10</option>
+                        <option value="Grade 11">Grade 11</option>
+                        <option value="Grade 12">Grade 12</option>
+                        <option value="Grade 13">Grade 13</option>
                       </select>
                     </div>
 
                     <div className="flex flex-col gap-1.5">
-                      <label className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Section (Class)</label>
+                      <label className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Section</label>
                       <select required value={formData.section} onChange={handleSectionChange} disabled={!formData.grade} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-100 focus:border-blue-500 text-sm text-slate-700 disabled:opacity-50">
                         <option value="" disabled>Select Section</option>
-                        {availableSectionsForGrade.map(sec => <option key={sec as string} value={sec as string}>{sec as string}</option>)}
+                        {isOL && <option value="O/L">O/L</option>}
+                        {isAL && (
+                          <>
+                            <option value="Science Section">Science Section</option>
+                            <option value="Commerce Section">Commerce Section</option>
+                            <option value="Technology Section">Technology Section</option>
+                            <option value="Arts Section">Arts Section</option>
+                          </>
+                        )}
                       </select>
                     </div>
 
@@ -605,39 +602,37 @@ export default function ManageStudents() {
                   )}
 
                   {/* A/L SMART SUBJECT SELECTOR */}
-                  {isAL && (
+                  {isAL && formData.section && (
                     <div className="space-y-4 animate-in fade-in duration-300 p-4 bg-slate-50 rounded-xl border border-slate-200 mt-6">
-                      <div className="flex flex-col gap-1.5 mb-4">
-                        <label className="text-xs font-bold text-slate-800 uppercase tracking-wider">Select A/L Stream</label>
-                        <select value={alStream} onChange={e => {setAlStream(e.target.value); setFormData({...formData, subjects: []})}} className="w-full sm:w-1/2 px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-100 text-slate-700">
-                          <option value="">Select Stream</option>
-                          {alStreams.map(stream => <option key={stream} value={stream}>{stream}</option>)}
-                        </select>
+                      <h4 className="text-sm font-bold text-slate-800">A/L Subject Selection</h4>
+                      <div className="bg-blue-50 p-3 rounded-lg border border-blue-100">
+                        <p className="text-[10px] font-bold text-blue-800 mb-2 uppercase tracking-wider">Core Subject (Compulsory)</p>
+                        <span className="px-2.5 py-1 bg-white text-blue-700 rounded-md border border-blue-200 text-xs font-bold shadow-sm">
+                          General English <CheckCircle size={10} className="inline ml-1 text-emerald-500"/>
+                        </span>
                       </div>
-
-                      {alStream && (
-                        <div className="animate-in fade-in duration-300">
-                          <div className="flex items-center justify-between mb-2">
-                            <label className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Select Enrolled Subjects</label>
-                            <span className="text-xs font-bold text-blue-600 bg-blue-100 px-2 py-0.5 rounded-full">Selected: {formData.subjects.length}</span>
-                          </div>
-                          <div className="flex flex-wrap gap-2">
-                            {alSubjectOptions[alStream].map(subject => {
-                              const isSelected = formData.subjects.includes(subject);
-                              return (
-                                <button
-                                  key={subject} type="button" onClick={() => handleAlSubjectToggle(subject)}
-                                  className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${
-                                    isSelected ? 'bg-blue-100 border-blue-500 text-blue-700' : 'bg-white border-slate-200 text-slate-600 hover:border-blue-300 hover:bg-blue-50'
-                                  }`}
-                                >
-                                  {subject} {isSelected && <CheckCircle size={12} className="inline ml-1 mb-0.5" />}
-                                </button>
-                              );
-                            })}
-                          </div>
+                      
+                      <div className="mt-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <label className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Select Optional Subjects</label>
+                          <span className="text-xs font-bold text-blue-600 bg-blue-100 px-2 py-0.5 rounded-full">Selected: {formData.subjects.length}</span>
                         </div>
-                      )}
+                        <div className="flex flex-wrap gap-2">
+                          {alSubjectOptions[formData.section]?.map(subject => {
+                            const isSelected = formData.subjects.includes(subject);
+                            return (
+                              <button
+                                key={subject} type="button" onClick={() => handleSubjectToggle(subject)}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${
+                                  isSelected ? 'bg-blue-100 border-blue-500 text-blue-700' : 'bg-white border-slate-200 text-slate-600 hover:border-blue-300 hover:bg-blue-50'
+                                }`}
+                              >
+                                {subject} {isSelected && <CheckCircle size={12} className="inline ml-1 mb-0.5" />}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
                     </div>
                   )}
 
@@ -713,7 +708,10 @@ export default function ManageStudents() {
                       <label className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Select Grade</label>
                       <select required value={messageForm.targetGrade} onChange={(e) => setMessageForm({...messageForm, targetGrade: e.target.value})} className="w-full px-4 py-2.5 bg-purple-50 border border-purple-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-200 focus:border-purple-500 transition-all text-sm text-purple-900 font-medium">
                         <option value="" disabled>Choose a grade...</option>
-                        {uniqueGrades.map(g => <option key={g as string} value={g as string}>{g as string}</option>)}
+                        <option value="Grade 10">Grade 10</option>
+                        <option value="Grade 11">Grade 11</option>
+                        <option value="Grade 12">Grade 12</option>
+                        <option value="Grade 13">Grade 13</option>
                       </select>
                     </div>
                   )}
@@ -723,7 +721,11 @@ export default function ManageStudents() {
                       <label className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Select Section</label>
                       <select required value={messageForm.targetSection} onChange={(e) => setMessageForm({...messageForm, targetSection: e.target.value})} className="w-full px-4 py-2.5 bg-purple-50 border border-purple-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-200 focus:border-purple-500 transition-all text-sm text-purple-900 font-medium">
                         <option value="" disabled>Choose a section...</option>
-                        {Array.from(new Set(schoolClasses.map(c => c.section))).sort().map(sec => <option key={sec as string} value={sec as string}>{sec as string} Students</option>)}
+                        <option value="O/L">O/L Students</option>
+                        <option value="Science Section">Science Students</option>
+                        <option value="Commerce Section">Commerce Students</option>
+                        <option value="Technology Section">Technology Students</option>
+                        <option value="Arts Section">Arts Students</option>
                       </select>
                     </div>
                   )}

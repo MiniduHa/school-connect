@@ -10,13 +10,16 @@ const timeSlots = [
 ];
 const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 
-const generateMockStudents = (count: number) => {
-  return Array.from({ length: Math.min(count, 15) }, () => ({
-    id: `STU-${2024 - Math.floor(Math.random() * 3)}-${Math.floor(Math.random() * 900) + 100}`,
-    name: ["Kavindu Perera", "Sanduni Silva", "Tharindu Fernando", "Nethmi Jayasuriya", "Dineth Rajapakse", "Amali Perera", "Kasun Silva"][Math.floor(Math.random() * 7)],
-    status: Math.random() > 0.1 ? 'Active' : 'Suspended'
-  }));
-};
+// --- STANDARDIZED SUBJECT LIST ---
+const allSubjects = Array.from(new Set([
+  "Mathematics", "Science", "English", "Sinhala", "Tamil", "History", "Buddhism", "Catholicism", "Christianity", "Islam",
+  "ICT", "Business & Accounting", "Art", "Dancing", "Music", "English Literature", "Sinhala Literature", "Drama",
+  "Geography", "Civic Education", "Health Education", "Agriculture",
+  "Combined Mathematics", "Biology", "Physics", "Chemistry", "General English", "GIT",
+  "Accounting", "Business Studies", "Economics", "Business Statistics",
+  "Engineering Technology (ET)", "Bio Systems Technology (BST)", "Science for Technology (SFT)",
+  "Logic", "Political Science", "Media Studies", "Study Hall", "Library", "PE / Sports"
+])).sort();
 
 export default function ManageClasses() {
   const [adminEmail, setAdminEmail] = useState('');
@@ -30,7 +33,9 @@ export default function ManageClasses() {
   // View Modal State
   const [selectedClass, setSelectedClass] = useState<any | null>(null);
   const [activeTab, setActiveTab] = useState<'overview' | 'timetable' | 'students'>('overview');
-  const [mockStudents, setMockStudents] = useState<any[]>([]);
+  
+  // --- NEW: Real Student Roster State ---
+  const [classStudents, setClassStudents] = useState<any[]>([]);
 
   // Timetable Editor State
   const [timetableData, setTimetableData] = useState<any[]>([]);
@@ -66,6 +71,19 @@ export default function ManageClasses() {
     } catch (err) { console.error(err); }
   };
 
+  // --- NEW: Fetch Real Enrolled Students ---
+  const fetchClassStudents = async (grade: string, section: string) => {
+    try {
+      const res = await fetch(`http://localhost:5000/api/school-admin/${adminEmail}/students`);
+      if (res.ok) {
+        const allStudents = await res.json();
+        // Filter out only the students assigned to this exact Grade and Section
+        const enrolledStudents = allStudents.filter((s: any) => s.grade_level === grade && s.section === section);
+        setClassStudents(enrolledStudents);
+      }
+    } catch (err) { console.error("Failed to fetch roster", err); }
+  };
+
   const handleCreateClass = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -80,31 +98,19 @@ export default function ManageClasses() {
     } catch (err) { console.error(err); }
   };
 
-  // --- NEW DELETE FUNCTION ---
   const handleDeleteClass = async (classId: string, className: string) => {
-    // Safety confirmation dialog
     if (!window.confirm(`Are you sure you want to delete ${className}? This will permanently erase the class and its master timetable.`)) {
       return;
     }
-
     try {
-      const res = await fetch(`http://localhost:5000/api/school-admin/${adminEmail}/classes/${classId}`, {
-        method: 'DELETE'
-      });
-      
+      const res = await fetch(`http://localhost:5000/api/school-admin/${adminEmail}/classes/${classId}`, { method: 'DELETE' });
       if (res.ok) {
-        // Remove it from the UI immediately without needing a full refresh
         setClasses(classes.filter(c => c.id !== classId));
-        if (selectedClass?.id === classId) {
-          setSelectedClass(null); // Close modal if open
-        }
+        if (selectedClass?.id === classId) setSelectedClass(null); 
       } else {
         alert("Failed to delete the class. Please try again.");
       }
-    } catch (err) {
-      console.error(err);
-      alert("Server connection error.");
-    }
+    } catch (err) { alert("Server connection error."); }
   };
 
   // TIMETABLE API CALLS
@@ -119,8 +125,8 @@ export default function ManageClasses() {
     setSelectedClass(cls);
     setActiveTab('overview');
     setIsEditingTimetable(false);
-    setMockStudents(generateMockStudents(cls.capacity || 40));
     fetchTimetable(cls.id);
+    fetchClassStudents(cls.grade, cls.section); // Fetch actual students!
   };
 
   const getSlotData = (day: string, period: number) => {
@@ -148,8 +154,14 @@ export default function ManageClasses() {
       if (res.ok) {
         setEditingSlot(null);
         fetchTimetable(selectedClass.id); // Refresh grid
+      } else {
+        const data = await res.json();
+        alert(`Failed to save: ${data.error || "Database error"}`);
       }
-    } catch (err) { console.error(err); }
+    } catch (err) { 
+      console.error(err); 
+      alert("Server error while saving timetable slot.");
+    }
   };
 
   const handleClearSlot = async () => {
@@ -366,7 +378,7 @@ export default function ManageClasses() {
                 </div>
               )}
 
-              {/* TAB 3: STUDENT ROSTER */}
+              {/* TAB 3: STUDENT ROSTER (NOW REAL DATA) */}
               {activeTab === 'students' && (
                 <div className="animate-in fade-in duration-300">
                   <div className="border border-slate-200 rounded-xl overflow-hidden">
@@ -378,21 +390,30 @@ export default function ManageClasses() {
                         </tr>
                       </thead>
                       <tbody>
-                        {mockStudents.map((student, idx) => (
-                          <tr key={idx} className="border-b border-slate-100 last:border-0 hover:bg-slate-50">
-                            <td className="p-3">
-                              <p className="font-bold text-slate-800 text-sm">{student.name}</p>
-                              <p className="text-xs text-slate-500 mt-0.5">{student.id}</p>
-                            </td>
-                            <td className="p-3 text-center">
-                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${student.status === 'Active' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>{student.status}</span>
+                        {classStudents.length > 0 ? (
+                          classStudents.map((student, idx) => (
+                            <tr key={idx} className="border-b border-slate-100 last:border-0 hover:bg-slate-50">
+                              <td className="p-3">
+                                <p className="font-bold text-slate-800 text-sm">{student.first_name} {student.last_name}</p>
+                                <p className="text-xs text-slate-500 mt-0.5">{student.index_number}</p>
+                              </td>
+                              <td className="p-3 text-center">
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${student.status === 'Active' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                                  {student.status}
+                                </span>
+                              </td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td colSpan={2} className="p-8 text-center text-slate-500">
+                              No students are currently enrolled in {selectedClass.grade} - {selectedClass.section}.
                             </td>
                           </tr>
-                        ))}
+                        )}
                       </tbody>
                     </table>
                   </div>
-                  <p className="text-xs text-slate-400 mt-4 text-center">Showing mock data until students are formally assigned to this class.</p>
                 </div>
               )}
             </div>
@@ -412,7 +433,10 @@ export default function ManageClasses() {
                 <form id="slot-form" onSubmit={handleSaveSlot} className="space-y-4">
                   <div>
                     <label className="text-xs font-semibold text-slate-600 uppercase">Subject</label>
-                    <input type="text" required value={slotForm.subject} onChange={e => setSlotForm({...slotForm, subject: e.target.value})} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg mt-1 focus:ring-2 focus:ring-blue-100" placeholder="e.g. Mathematics" />
+                    <select required value={slotForm.subject} onChange={e => setSlotForm({...slotForm, subject: e.target.value})} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg mt-1 focus:ring-2 focus:ring-blue-100 text-slate-700">
+                      <option value="" disabled>-- Select Subject --</option>
+                      {allSubjects.map(sub => <option key={sub} value={sub}>{sub}</option>)}
+                    </select>
                   </div>
                   <div>
                     <label className="text-xs font-semibold text-slate-600 uppercase">Assign Teacher</label>
@@ -445,7 +469,6 @@ export default function ManageClasses() {
                     <div>
                       <label className="text-xs font-semibold text-slate-600 uppercase">Grade</label>
                       <select required value={formData.grade} onChange={e => setFormData({...formData, grade: e.target.value})} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg mt-1 focus:ring-2 focus:ring-blue-100 text-slate-700">
-                        <option value="" disabled>Select Grade</option>
                         <option value="Grade 10">Grade 10</option>
                         <option value="Grade 11">Grade 11</option>
                         <option value="Grade 12">Grade 12</option>
