@@ -69,6 +69,13 @@ app.post('/api/school-admin/:email/events', schoolAdminController.addEvent);
 app.put('/api/school-admin/:email/events/:eventId', schoolAdminController.updateEvent);
 app.delete('/api/school-admin/:email/events/:eventId', schoolAdminController.deleteEvent);
 
+// 10. School Admin Notice Management
+app.get('/api/school-admin/:email/notices', schoolAdminController.getNotices);
+app.post('/api/school-admin/:email/notices', schoolAdminController.addNotice);
+app.put('/api/school-admin/:email/notices/:noticeId', schoolAdminController.updateNotice);
+app.delete('/api/school-admin/:email/notices/:noticeId', schoolAdminController.deleteNotice);
+
+
 // --- AUTHENTICATION ROUTES ---
 
 // Smart Cascading Login Route
@@ -80,63 +87,37 @@ app.post('/api/auth/login', async (req, res) => {
     let user = null;
     let assignedRole = '';
 
-    // 1. Check Super Admins
     let result = await db.query('SELECT * FROM super_admins WHERE email = $1', [cleanEmail]);
-    if (result.rows.length > 0) {
-      user = result.rows[0];
-      assignedRole = 'SuperAdmin';
-    }
+    if (result.rows.length > 0) { user = result.rows[0]; assignedRole = 'SuperAdmin'; }
 
-    // 2. Check School Admins
     if (!user) {
       result = await db.query('SELECT * FROM schools WHERE email = $1', [cleanEmail]);
-      if (result.rows.length > 0) {
-        user = result.rows[0];
-        assignedRole = 'SchoolAdmin';
-      }
+      if (result.rows.length > 0) { user = result.rows[0]; assignedRole = 'SchoolAdmin'; }
     }
 
-    // 3. Check Teachers
     if (!user) {
       result = await db.query('SELECT * FROM teachers WHERE email = $1', [cleanEmail]);
-      if (result.rows.length > 0) {
-        user = result.rows[0];
-        assignedRole = 'Teacher';
-      }
+      if (result.rows.length > 0) { user = result.rows[0]; assignedRole = 'Teacher'; }
     }
 
-    // 4. Check Parents
     if (!user) {
       result = await db.query('SELECT * FROM parents WHERE email = $1', [cleanEmail]);
-      if (result.rows.length > 0) {
-        user = result.rows[0];
-        assignedRole = 'Parent';
-      }
+      if (result.rows.length > 0) { user = result.rows[0]; assignedRole = 'Parent'; }
     }
 
-    // 5. Check Students
     if (!user) {
       result = await db.query('SELECT * FROM students WHERE email = $1', [cleanEmail]);
-      if (result.rows.length > 0) {
-        user = result.rows[0];
-        assignedRole = 'Student';
-      }
+      if (result.rows.length > 0) { user = result.rows[0]; assignedRole = 'Student'; }
     }
 
-    if (!user) {
-      return res.status(400).json({ error: "No account found with this email." });
-    }
+    if (!user) return res.status(400).json({ error: "No account found with this email." });
 
     if (assignedRole === 'SchoolAdmin' && user.status !== 'Active') {
-      return res.status(403).json({ 
-        error: `Login denied. Your account status is currently: ${user.status}. Please wait for Super Admin approval.` 
-      });
+      return res.status(403).json({ error: `Login denied. Your account status is currently: ${user.status}. Please wait for Super Admin approval.` });
     }
 
     const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) {
-      return res.status(400).json({ error: "Invalid password." });
-    }
+    if (!isMatch) return res.status(400).json({ error: "Invalid password." });
 
     if (assignedRole === 'SuperAdmin') {
       res.json({ message: "Login successful!", user: { id: user.id, full_name: user.full_name, email: user.email, role: 'SuperAdmin' }});
@@ -149,7 +130,6 @@ app.post('/api/auth/login', async (req, res) => {
     } else {
       res.json({ message: "Login successful!", student: { first_name: user.first_name, last_name: user.last_name, email: user.email, role: 'Student', grade_level: user.grade_level, studentId: user.index_number, profile_photo: user.profile_photo_url }});
     }
-
   } catch (error) {
     console.error("Login Error:", error.message);
     res.status(500).json({ error: "Server error during login." });
@@ -166,24 +146,21 @@ app.post('/api/auth/register', async (req, res) => {
     if (role === 'Student') {
       const { first_name, last_name, grade_level, index_number } = req.body;
       const result = await db.query(
-        `INSERT INTO students (first_name, last_name, email, password, grade_level, index_number) 
-         VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, first_name, last_name, email`,
+        `INSERT INTO students (first_name, last_name, email, password, grade_level, index_number) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, first_name, last_name, email`,
         [first_name, last_name, email, hashedPassword, grade_level, index_number]
       );
       return res.status(201).json({ message: "Student registered successfully!", user: result.rows[0] });
     } else if (role === 'Parent') {
       const { full_name, phone_number, child_student_ids } = req.body;
       const result = await db.query(
-        `INSERT INTO parents (full_name, email, phone_number, password, child_student_ids) 
-         VALUES ($1, $2, $3, $4, $5) RETURNING id, full_name, email`,
+        `INSERT INTO parents (full_name, email, phone_number, password, child_student_ids) VALUES ($1, $2, $3, $4, $5) RETURNING id, full_name, email`,
         [full_name, email, phone_number, hashedPassword, child_student_ids]
       );
       return res.status(201).json({ message: "Parent registered successfully!", user: result.rows[0] });
     } else if (role === 'Teacher') {
       const { full_name, phone_number, staff_id, department, medium, school_name } = req.body;
       const result = await db.query(
-        `INSERT INTO teachers (full_name, email, phone_number, password, staff_id, department, medium, school_name) 
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, full_name, email`,
+        `INSERT INTO teachers (full_name, email, phone_number, password, staff_id, department, medium, school_name) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, full_name, email`,
         [full_name, email, phone_number, hashedPassword, staff_id, department, medium, school_name]
       );
       return res.status(201).json({ message: "Teacher registered successfully!", user: result.rows[0] });
@@ -213,9 +190,7 @@ app.post('/api/profile/upload-avatar', upload.single('photo'), async (req, res) 
     await db.query('UPDATE students SET profile_photo_url = $1 WHERE index_number = $2', [publicUrl, studentId]);
 
     res.json({ message: "Photo uploaded successfully", photoUrl: publicUrl });
-  } catch (error) {
-    res.status(500).json({ error: "Server error during photo upload." });
-  }
+  } catch (error) { res.status(500).json({ error: "Server error during photo upload." }); }
 });
 
 app.get('/api/profile/:studentId', async (req, res) => {

@@ -1,44 +1,18 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Search, Plus, X, Megaphone, CalendarDays, Users, Edit2, Trash2, Eye, CheckCircle2, AlignLeft, FileText } from 'lucide-react';
 
-// --- MOCK DATA ---
-const initialNotices = [
-  { 
-    id: 'NOT-001', title: "School Closed for Vesak Poya", date: "2026-04-12", 
-    priority: "High", audience: "All Students & Parents", status: "Published", author: "Principal's Office",
-    content: "Please be informed that the school will remain closed on the 1st of May in observance of Vesak Poya. Regular academic activities will resume on the following Monday. We wish all our students and their families a peaceful and meaningful Vesak."
-  },
-  { 
-    id: 'NOT-002', title: "Grade 10 Parent-Teacher Meeting", date: "2026-04-11", 
-    priority: "Normal", audience: "Grade 10 Students", status: "Published", author: "Admin Office",
-    content: "The termly Parent-Teacher meeting for Grade 10 students is scheduled for next Friday from 2:00 PM to 4:30 PM in the Main Hall. Your attendance is highly appreciated to discuss your child's academic progress."
-  },
-  { 
-    id: 'NOT-003', title: "Inter-House Sports Meet Registration", date: "2026-04-10", 
-    priority: "Normal", audience: "All Students", status: "Published", author: "Sports Department",
-    content: "Registrations for the Annual Inter-House Sports Meet are now open. Students interested in participating in track and field events must submit their names to their respective House Captains before the end of this week."
-  },
-  { 
-    id: 'NOT-004', title: "Update on Term 1 Examination Timetable", date: "2026-04-09", 
-    priority: "High", audience: "All Students", status: "Draft", author: "Examination Unit",
-    content: "Draft timetable for the upcoming Term 1 examinations. Please review the attached schedule. Final confirmation will be published next week."
-  },
-  { 
-    id: 'NOT-005', title: "New Library Opening Hours", date: "2026-04-05", 
-    priority: "Low", audience: "All Students", status: "Published", author: "Library Department",
-    content: "Starting next month, the Main Library will extend its opening hours. The new operating hours will be from 7:30 AM to 5:00 PM on all weekdays to give students more time for reference and study."
-  },
-];
-
 export default function ManageNotices() {
+  const [adminEmail, setAdminEmail] = useState('');
+  const [notices, setNotices] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
   const [searchTerm, setSearchTerm] = useState('');
   const [audienceFilter, setAudienceFilter] = useState('all');
-  const [notices, setNotices] = useState(initialNotices);
 
   // View Modal State
   const [selectedNotice, setSelectedNotice] = useState<any | null>(null);
 
-  // Form Modal State (Handles BOTH Add and Edit)
+  // Form Modal State
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
   const [formMode, setFormMode] = useState<'add' | 'edit'>('add');
   const [editingNoticeId, setEditingNoticeId] = useState<string | null>(null);
@@ -46,10 +20,44 @@ export default function ManageNotices() {
   const [formData, setFormData] = useState({
     title: '', audience: '', priority: 'Normal', author: '', content: ''
   });
-  
-  // Filter Logic
+
+  useEffect(() => {
+    const storedUser = localStorage.getItem('schoolConnectUser');
+    if (storedUser) {
+      const parsedUser = JSON.parse(storedUser);
+      setAdminEmail(parsedUser.email);
+      fetchNotices(parsedUser.email);
+    }
+  }, []);
+
+  const fetchNotices = async (email: string) => {
+    try {
+      const res = await fetch(`http://localhost:5000/api/school-admin/${email}/notices`);
+      if (res.ok) {
+        const data = await res.json();
+        // Map database fields to the frontend expectations
+        const formattedNotices = data.map((n: any) => ({
+          id: n.id,
+          title: n.title,
+          content: n.content,
+          priority: n.priority,
+          audience: n.audience,
+          author: n.posted_by,
+          status: n.status || 'Published',
+          date: new Date(n.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+        }));
+        setNotices(formattedNotices);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const filteredNotices = notices.filter(notice => {
     const matchesSearch = notice.title.toLowerCase().includes(searchTerm.toLowerCase());
+    // Smart filter: if the audience includes the filter word, it shows up.
     const matchesAudience = audienceFilter === 'all' || notice.audience.toLowerCase().includes(audienceFilter.toLowerCase());
     return matchesSearch && matchesAudience;
   });
@@ -72,39 +80,48 @@ export default function ManageNotices() {
     setIsFormModalOpen(true);
   };
 
-  const handleDeleteNotice = (id: string) => {
+  const handleDeleteNotice = async (id: string) => {
     if(window.confirm("Are you sure you want to delete this notice? This cannot be undone.")) {
-      setNotices(notices.filter(n => n.id !== id));
+      try {
+        const res = await fetch(`http://localhost:5000/api/school-admin/${adminEmail}/notices/${id}`, { method: 'DELETE' });
+        if (res.ok) {
+          setNotices(notices.filter(n => n.id !== id));
+          if (selectedNotice?.id === id) setSelectedNotice(null);
+        } else {
+          alert("Failed to delete notice.");
+        }
+      } catch (err) {
+        alert("Server error during deletion.");
+      }
     }
   };
 
-  const handleSaveNotice = (targetStatus: 'Draft' | 'Published') => {
-    // Basic validation
+  const handleSaveNotice = async (targetStatus: 'Draft' | 'Published') => {
     if(!formData.title || !formData.content || !formData.audience || !formData.author) {
       alert("Please fill in all required fields before saving.");
       return;
     }
 
-    const today = new Date().toISOString().split('T')[0]; // Format: YYYY-MM-DD
-
-    const submittedNotice = {
-      id: formMode === 'edit' && editingNoticeId ? editingNoticeId : `NOT-${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`,
-      title: formData.title,
-      date: formMode === 'edit' ? (notices.find(n => n.id === editingNoticeId)?.date || today) : today,
-      priority: formData.priority,
-      audience: formData.audience,
-      author: formData.author,
-      content: formData.content,
-      status: targetStatus
-    };
-
-    if (formMode === 'edit') {
-      setNotices(notices.map(n => n.id === editingNoticeId ? submittedNotice : n));
-    } else {
-      setNotices([submittedNotice, ...notices]);
-    }
+    const payload = { ...formData, status: targetStatus };
+    const url = formMode === 'add' 
+      ? `http://localhost:5000/api/school-admin/${adminEmail}/notices`
+      : `http://localhost:5000/api/school-admin/${adminEmail}/notices/${editingNoticeId}`;
     
-    setIsFormModalOpen(false);
+    const method = formMode === 'add' ? 'POST' : 'PUT';
+
+    try {
+      const res = await fetch(url, {
+        method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+      });
+      if (res.ok) {
+        setIsFormModalOpen(false);
+        fetchNotices(adminEmail); // Refresh data from database
+      } else {
+        alert("Failed to save notice.");
+      }
+    } catch (err) {
+      alert("Server connection error.");
+    }
   };
 
   return (
@@ -144,8 +161,11 @@ export default function ManageNotices() {
           <option value="all">All Audiences</option>
           <option value="parents">Parents</option>
           <option value="students">Students</option>
+          <option value="teacher">Teachers</option>
           <option value="grade 10">Grade 10</option>
-          <option value="staff">Staff</option>
+          <option value="grade 11">Grade 11</option>
+          <option value="grade 12">Grade 12</option>
+          <option value="grade 13">Grade 13</option>
         </select>
       </div>
 
@@ -162,7 +182,9 @@ export default function ManageNotices() {
               </tr>
             </thead>
             <tbody>
-              {filteredNotices.map((notice) => (
+              {isLoading ? (
+                <tr><td colSpan={4} className="p-8 text-center text-slate-500 font-medium animate-pulse">Loading notices...</td></tr>
+              ) : filteredNotices.map((notice) => (
                 <tr key={notice.id} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
                   <td className="p-4">
                     <div className="flex items-start gap-3">
@@ -224,7 +246,7 @@ export default function ManageNotices() {
               ))}
             </tbody>
           </table>
-          {filteredNotices.length === 0 && (
+          {!isLoading && filteredNotices.length === 0 && (
             <div className="p-8 text-center text-slate-500 flex flex-col items-center gap-2">
               <Megaphone size={32} className="text-slate-300" />
               <p>No notices found matching your filters.</p>
@@ -331,7 +353,7 @@ export default function ManageNotices() {
                     <label className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Target Audience</label>
                     <select required value={formData.audience} onChange={(e) => setFormData({...formData, audience: e.target.value})} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-100 focus:border-blue-500 text-sm text-slate-700">
                       <option value="" disabled>Select Audience</option>
-                      <option value="All Students & Parents">All Students & Parents</option>
+                      <option value="All students, parents and teachers">All students, parents and teachers</option>
                       <option value="All Students">All Students</option>
                       <option value="All Parents">All Parents</option>
                       <option value="Teaching Staff">Teaching Staff</option>
