@@ -35,6 +35,17 @@ app.use('/api/superadmin/schools', schoolRoutes);
 // 2. Public School Registration
 app.post('/api/schools/register', schoolController.registerSchool);
 
+// ---> NEW: Fetch list of active registered schools for mobile app dropdown
+app.get('/api/schools/list', async (req, res) => {
+  try {
+    const result = await db.query("SELECT name FROM schools WHERE status = 'Active'");
+    res.json(result.rows); 
+  } catch (error) {
+    console.error("Fetch Schools Error:", error.message);
+    res.status(500).json({ error: "Failed to fetch schools." });
+  }
+});
+
 // 3. School Admin Dashboard Data
 app.get('/api/school-admin/:email/dashboard', schoolAdminController.getSchoolDashboardStats);
 
@@ -142,7 +153,7 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-// Legacy Registration Route
+// Public Application Registration Route (Mobile App)
 app.post('/api/auth/register', async (req, res) => {
   try {
     const { role, email, password } = req.body;
@@ -150,31 +161,60 @@ app.post('/api/auth/register', async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, salt);
 
     if (role === 'Student') {
-      const { first_name, last_name, grade_level, index_number } = req.body;
+      const { first_name, last_name, grade_level, index_number, school_name } = req.body;
+      
+      // Match the school name from the dropdown to the actual School ID in the database
+      let school_id = null;
+      if (school_name) {
+        const schoolRes = await db.query('SELECT id FROM schools WHERE name = $1', [school_name]);
+        if (schoolRes.rows.length > 0) school_id = schoolRes.rows[0].id;
+      }
+
       const result = await db.query(
-        `INSERT INTO students (first_name, last_name, email, password, grade_level, index_number) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, first_name, last_name, email`,
-        [first_name, last_name, email, hashedPassword, grade_level, index_number]
+        `INSERT INTO students (first_name, last_name, email, password, grade_level, index_number, school_name, school_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, first_name, last_name, email`,
+        [first_name, last_name, email, hashedPassword, grade_level, index_number, school_name, school_id]
       );
       return res.status(201).json({ message: "Student registered successfully!", user: result.rows[0] });
+      
     } else if (role === 'Parent') {
       const { full_name, phone_number, child_student_ids } = req.body;
+      
+      // FIXED: Safely convert the incoming child_student_ids into a proper Postgres Array
+      let childIdsArray = [];
+      if (child_student_ids && typeof child_student_ids === 'string') {
+          childIdsArray = child_student_ids.split(',').map(id => id.trim()).filter(id => id !== '');
+      } else if (Array.isArray(child_student_ids)) {
+          childIdsArray = child_student_ids;
+      }
+
       const result = await db.query(
         `INSERT INTO parents (full_name, email, phone_number, password, child_student_ids) VALUES ($1, $2, $3, $4, $5) RETURNING id, full_name, email`,
-        [full_name, email, phone_number, hashedPassword, child_student_ids]
+        [full_name, email, phone_number, hashedPassword, childIdsArray]
       );
       return res.status(201).json({ message: "Parent registered successfully!", user: result.rows[0] });
+
     } else if (role === 'Teacher') {
       const { full_name, phone_number, staff_id, department, medium, school_name } = req.body;
+      
+      // Match the school name from the dropdown to the actual School ID in the database
+      let school_id = null;
+      if (school_name) {
+        const schoolRes = await db.query('SELECT id FROM schools WHERE name = $1', [school_name]);
+        if (schoolRes.rows.length > 0) school_id = schoolRes.rows[0].id;
+      }
+
       const result = await db.query(
-        `INSERT INTO teachers (full_name, email, phone_number, password, staff_id, department, medium, school_name) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, full_name, email`,
-        [full_name, email, phone_number, hashedPassword, staff_id, department, medium, school_name]
+        `INSERT INTO teachers (full_name, email, phone_number, password, staff_id, department, medium, school_name, school_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id, full_name, email`,
+        [full_name, email, phone_number, hashedPassword, staff_id, department, medium, school_name, school_id]
       );
       return res.status(201).json({ message: "Teacher registered successfully!", user: result.rows[0] });
+
     } else {
       return res.status(400).json({ error: "Invalid role selected." });
     }
   } catch (error) {
-    if (error.code === '23505') return res.status(400).json({ error: "Email or ID already exists." });
+    if (error.code === '23505') return res.status(400).json({ error: "Email or ID already exists in the system." });
+    console.error("Registration Error: ", error.message);
     res.status(500).json({ error: "Server error during registration." });
   }
 });

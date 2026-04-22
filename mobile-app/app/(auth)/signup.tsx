@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { 
   View, 
   Text, 
@@ -14,6 +14,7 @@ import { FontAwesome6 } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 
 const API_URL = "http://172.20.10.7:5000/api/auth/register";
+const SCHOOLS_API_URL = "http://172.20.10.7:5000/api/schools/list"; // NEW: Endpoint to fetch schools
 
 const CustomInput = ({ label, ...props }: any) => (
   <View style={styles.inputGroup}>
@@ -44,20 +45,26 @@ const CustomDropdown = ({ label, value, options, onSelect }: any) => {
 
       {isOpen && (
         <View style={styles.dropdownList}>
-          {options.map((opt: string) => (
-            <TouchableOpacity 
-              key={opt} 
-              style={styles.dropdownItem} 
-              onPress={() => {
-                onSelect(opt);
-                setIsOpen(false);
-              }}
-            >
-              <Text style={[styles.dropdownItemText, value === opt && styles.dropdownItemActive]}>
-                {opt}
-              </Text>
-            </TouchableOpacity>
-          ))}
+          {options.length > 0 ? (
+            options.map((opt: string) => (
+              <TouchableOpacity 
+                key={opt} 
+                style={styles.dropdownItem} 
+                onPress={() => {
+                  onSelect(opt);
+                  setIsOpen(false);
+                }}
+              >
+                <Text style={[styles.dropdownItemText, value === opt && styles.dropdownItemActive]}>
+                  {opt}
+                </Text>
+              </TouchableOpacity>
+            ))
+          ) : (
+            <View style={styles.dropdownItem}>
+              <Text style={styles.dropdownItemText}>Loading options...</Text>
+            </View>
+          )}
         </View>
       )}
     </View>
@@ -78,6 +85,9 @@ export default function SignupScreen() {
   
   const [role, setRole] = useState("Student");
   const roles = ["Student", "Parent", "Teacher", "Industry"];
+
+  // Dynamic School List State
+  const [schoolList, setSchoolList] = useState<string[]>([]);
 
   // Name States
   const [firstName, setFirstName] = useState("");
@@ -105,6 +115,23 @@ export default function SignupScreen() {
 
   const [childIds, setChildIds] = useState<string[]>([""]);
 
+  // Fetch registered schools from backend when component mounts
+  useEffect(() => {
+    const fetchSchools = async () => {
+      try {
+        const response = await fetch(SCHOOLS_API_URL);
+        if (response.ok) {
+          const data = await response.json();
+          // Extract just the school names from the database objects
+          setSchoolList(data.map((s: any) => s.name));
+        }
+      } catch (error) {
+        console.error("Failed to fetch schools from API");
+      }
+    };
+    fetchSchools();
+  }, []);
+
   const updateChildId = (text: string, index: number) => {
     const newIds = [...childIds];
     newIds[index] = text;
@@ -126,15 +153,19 @@ export default function SignupScreen() {
       return;
     }
 
-    // UPDATED: Now allows Student, Parent, and Teacher to proceed
     if (role !== "Student" && role !== "Parent" && role !== "Teacher" && role !== "Industry") {
       Alert.alert("Coming Soon", `Registration for ${role} is currently being developed.`);
       return;
     }
 
-    // Require Teacher/Industry to agree to terms
     if ((role === "Teacher" || role === "Industry") && !agreeTerms) {
       Alert.alert("Error", "You must agree to the Terms of Service to register.");
+      return;
+    }
+
+    // Force school selection for Students and Teachers
+    if ((role === "Student" || role === "Teacher") && !school) {
+      Alert.alert("Error", "Please select your school from the list.");
       return;
     }
 
@@ -152,18 +183,18 @@ export default function SignupScreen() {
         payload.last_name = lastName;
         payload.grade_level = grade;
         payload.index_number = studentId;
+        payload.school_name = school; // Included the selected school
       } else if (role === "Parent") {
         payload.full_name = fullName;
         payload.phone_number = phone;
         payload.child_student_ids = childIds.filter(id => id.trim() !== "");
       } else if (role === "Teacher") {
-        // UPDATED: Add Teacher specific payload fields
         payload.full_name = fullName;
         payload.phone_number = phone;
         payload.staff_id = staffId;
         payload.department = department;
         payload.medium = medium;
-        payload.school_name = school;
+        payload.school_name = school; // Included the selected school
       }
       
       const response = await fetch(API_URL, {
@@ -228,7 +259,14 @@ export default function SignupScreen() {
             <CustomInput label="Email Address" placeholder="your@email.com" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" />
             <CustomInput label="Student ID / Index" placeholder="Enter your ID" value={studentId} onChangeText={setStudentId} />
             <CustomInput label="Grade" placeholder="e.g. Grade 10" value={grade} onChangeText={setGrade} />
-            <CustomInput label="School Name" placeholder="Enter your School" value={school} onChangeText={setSchool} />
+            
+            {/* DYNAMIC SCHOOL DROPDOWN */}
+            <CustomDropdown 
+              label="Registered School" 
+              value={school} 
+              options={schoolList} 
+              onSelect={setSchool} 
+            />
           </>
         )}
 
@@ -274,7 +312,14 @@ export default function SignupScreen() {
             <CustomInput label="Staff ID" placeholder="Enter your Staff ID" value={staffId} onChangeText={setStaffId} />
             <CustomDropdown label="Department" value={department} options={["O/L", "Science Stream", "Commerce Stream", "Technology Stream"]} onSelect={setDepartment} />
             <CustomDropdown label="Medium" value={medium} options={["English", "Sinhala", "Tamil"]} onSelect={setMedium} />
-            <CustomInput label="School Name" placeholder="Enter your School" value={school} onChangeText={setSchool} />
+            
+            {/* DYNAMIC SCHOOL DROPDOWN */}
+            <CustomDropdown 
+              label="Registered School" 
+              value={school} 
+              options={schoolList} 
+              onSelect={setSchool} 
+            />
           </>
         )}
 
