@@ -1,4 +1,6 @@
 const express = require('express');
+const dns = require('node:dns');
+dns.setDefaultResultOrder('ipv4first');
 const cors = require('cors');
 const bcrypt = require('bcryptjs'); 
 const multer = require('multer'); 
@@ -24,6 +26,12 @@ const schoolAdminController = require('./controllers/schoolAdminController');
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_KEY; 
 const supabase = createClient(supabaseUrl, supabaseKey);
+
+// Storage Connectivity Check
+supabase.storage.listBuckets().then(({ data, error }) => {
+  if (error) console.error("⚠️ Supabase Storage Connectivity Issue:", error.message);
+  else console.log("✅ Supabase Storage Connected. Available buckets:", data.map(b => b.name));
+});
 
 // Configure Multer
 const upload = multer({ storage: multer.memoryStorage() });
@@ -416,9 +424,64 @@ app.get('/api/teacher/:email/dashboard', async (req, res) => {
       };
     });
 
-    // 3. pendingTasks & notices mocked (since tables do not exist yet)
-    const pendingTasks = [];
-    const urgentNoticeData = null;
+    // Fetch Special Events (Finished, visible for up to 14 days after event)
+    let specialEvents = [];
+    try {
+      const specialRes = await db.query(
+        `SELECT id, title, type, event_date, location, image_url 
+         FROM events 
+         WHERE school_id = $1 
+         AND is_special = true 
+         AND event_date < CURRENT_DATE 
+         AND event_date >= CURRENT_DATE - INTERVAL '14 days' 
+         ORDER BY event_date DESC`,
+        [teacher.school_id]
+      );
+      if (specialRes.rows.length > 0) {
+        specialEvents = specialRes.rows.map(evt => ({
+          id: evt.id,
+          title: evt.title,
+          type: evt.type,
+          date: new Date(evt.event_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+          location: evt.location,
+          image: evt.image_url || "https://images.unsplash.com/photo-1523580494863-6f3031224c94?w=500&q=80"
+        }));
+      }
+    } catch (err) {
+      console.error("Failed to fetch special events:", err);
+    }
+    
+    // Fetch Urgent Notice (High priority only, audience Teachers or All)
+    let urgentNoticeData = [];
+    try {
+      const noticeRes = await db.query(
+        `SELECT id, title, content, created_at 
+         FROM notices 
+         WHERE school_id = $1 
+         AND priority = 'High' 
+         AND (audience = 'Teaching Staff' OR audience = 'All students, parents and teachers') 
+         AND status = 'Published' 
+         ORDER BY created_at DESC`,
+        [teacher.school_id]
+      );
+
+      if (noticeRes.rows.length > 0) {
+        urgentNoticeData = noticeRes.rows.map(notice => {
+          const createdDate = new Date(notice.created_at);
+          const timeString = createdDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+          return {
+            id: notice.id,
+            icon: "alert-circle",
+            title: notice.title,
+            time: timeString,
+            body: notice.content
+          };
+        });
+      }
+    } catch (err) {
+      console.error("Failed to fetch urgent notice:", err);
+    }
 
     // 4. Calculate actual total distinct students taught by this teacher based on enrolled subjects
     let realTotalStudents = 0;
@@ -437,11 +500,10 @@ app.get('/api/teacher/:email/dashboard', async (req, res) => {
       realTotalStudents = parseInt(studentCountRes.rows[0].count, 10);
     } catch (e) {
       console.error("Error fetching distinct student count:", e);
-    }
+    } 
 
     const stats = {
       totalClassesToday: todaysClasses.length,
-      pendingTasks: pendingTasks.length,
       totalStudents: realTotalStudents
     };
 
@@ -454,14 +516,38 @@ app.get('/api/teacher/:email/dashboard', async (req, res) => {
         profile_photo: teacher.profile_photo_url 
       },
       todaysClasses,
-      pendingTasks,
       urgentNoticeData,
+      specialEvents,
       stats
     });
 
   } catch (error) {
     console.error("Teacher Dashboard Fetch Error:", error.message);
     res.status(500).json({ error: "Server error fetching teacher dashboard." });
+  }
+});
+
+// ---> NEW: TEACHER ALL EVENTS ROUTE <---
+app.get('/api/teacher/:email/events', async (req, res) => {
+  try {
+    const { email } = req.params;
+    const cleanEmail = email.toLowerCase().trim();
+
+    const teacherRes = await db.query('SELECT school_id FROM teachers WHERE email = $1', [cleanEmail]);
+    if (teacherRes.rows.length === 0) return res.status(404).json({ error: "Teacher not found" });
+
+    const result = await db.query(
+      `SELECT id, title, description, event_date, time_from, time_to, location, type, is_special 
+       FROM events 
+       WHERE school_id = $1 
+       ORDER BY event_date ASC, time_from ASC`,
+      [teacherRes.rows[0].school_id]
+    );
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error("Teacher Events Fetch Error:", error.message);
+    res.status(500).json({ error: "Failed to fetch events." });
   }
 });
 
@@ -562,6 +648,36 @@ app.post('/api/teacher/upload-avatar', upload.single('photo'), async (req, res) 
   } catch (error) {
     console.error("Error uploading teacher avatar:", error);
     res.status(500).json({ error: "Server error during teacher photo upload." });
+  }
+});
+
+app.post('/api/school-admin/upload-event-image', upload.single('image'), async (req, res) => {
+  try {
+    const file = req.file;
+    if (!file) return res.status(400).json({ error: "No image uploaded." });
+
+    const fileExt = file.originalname ? file.originalname.split('.').pop() : 'jpg';
+    const fileName = `event_${Date.now()}.${fileExt}`;
+
+    console.log(`[DEBUG] Attempting upload: ${fileName}, size: ${file.size} bytes, type: ${file.mimetype}`);
+
+    // Upload to avatars bucket for simplicity, or event_images if it existed.
+    const { error: uploadError } = await supabase.storage.from('avatars').upload(fileName, file.buffer, { 
+      contentType: file.mimetype, 
+      upsert: true 
+    });
+    
+    if (uploadError) {
+      console.error("[DEBUG] Supabase Upload Error Details:", uploadError);
+      throw uploadError;
+    }
+
+    const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(fileName);
+
+    res.json({ message: "Image uploaded successfully", imageUrl: publicUrl });
+  } catch (error) {
+    console.error("Error uploading event image:", error);
+    res.status(500).json({ error: "Server error during event image upload." });
   }
 });
 

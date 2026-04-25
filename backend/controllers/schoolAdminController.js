@@ -367,15 +367,16 @@ exports.getEvents = async (req, res) => {
 exports.addEvent = async (req, res) => {
   try {
     const { email } = req.params;
-    const { title, date, timeFrom, timeTo, location, type, audience, status, isSpecial } = req.body;
+    const { title, date, timeFrom, timeTo, location, type, status, isSpecial, imageUrl } = req.body;
+    const audience = 'All'; // Hardcoded as per business rules
     
     const schoolResult = await db.query('SELECT id FROM schools WHERE email = $1', [email.toLowerCase().trim()]);
     if (schoolResult.rows.length === 0) return res.status(404).json({ error: "School not found" });
 
     const result = await db.query(
-      `INSERT INTO events (school_id, title, event_date, time_from, time_to, location, type, audience, status, is_special)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
-      [schoolResult.rows[0].id, title, date, timeFrom, timeTo, location, type, audience, status, isSpecial]
+      `INSERT INTO events (school_id, title, event_date, time_from, time_to, location, type, audience, status, is_special, image_url)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
+      [schoolResult.rows[0].id, title, date, timeFrom, timeTo, location, type, audience, status, isSpecial, imageUrl || null]
     );
     res.status(201).json({ message: "Event added successfully!", event: result.rows[0] });
   } catch (error) { res.status(500).json({ error: "Failed to add event." }); }
@@ -384,14 +385,15 @@ exports.addEvent = async (req, res) => {
 exports.updateEvent = async (req, res) => {
   try {
     const { email, eventId } = req.params;
-    const { title, date, timeFrom, timeTo, location, type, audience, status, isSpecial } = req.body;
+    const { title, date, timeFrom, timeTo, location, type, status, isSpecial, imageUrl } = req.body;
+    const audience = 'All'; // Hardcoded as per business rules
     
     const schoolResult = await db.query('SELECT id FROM schools WHERE email = $1', [email.toLowerCase().trim()]);
     if (schoolResult.rows.length === 0) return res.status(404).json({ error: "School not found" });
 
     const result = await db.query(
-      `UPDATE events SET title = $1, event_date = $2, time_from = $3, time_to = $4, location = $5, type = $6, audience = $7, status = $8, is_special = $9 WHERE id = $10 AND school_id = $11 RETURNING *`,
-      [title, date, timeFrom, timeTo, location, type, audience, status, isSpecial, eventId, schoolResult.rows[0].id]
+      `UPDATE events SET title = $1, event_date = $2, time_from = $3, time_to = $4, location = $5, type = $6, audience = $7, status = $8, is_special = $9, image_url = $10 WHERE id = $11 AND school_id = $12 RETURNING *`,
+      [title, date, timeFrom, timeTo, location, type, audience, status, isSpecial, imageUrl || null, eventId, schoolResult.rows[0].id]
     );
     res.json({ message: "Event updated successfully!", event: result.rows[0] });
   } catch (error) { res.status(500).json({ error: "Failed to update event." }); }

@@ -1,44 +1,81 @@
-import React, { useState } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import { 
   View, 
   Text, 
   StyleSheet, 
   ScrollView, 
   TouchableOpacity,
-  Dimensions
+  Dimensions,
+  ActivityIndicator
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { FontAwesome6, Feather } from "@expo/vector-icons";
-import { useRouter, Stack } from "expo-router";
+import { useRouter, Stack, useLocalSearchParams } from "expo-router";
+import { useFocusEffect } from "@react-navigation/native";
 
 const { width } = Dimensions.get("window");
 
-// ==========================================
-// MASTER CALENDAR DATA (Exported to feed the Home Screen!)
-// ==========================================
-export const sharedCalendarEvents = [
-  // --- FINISHED SPECIAL EVENTS (Will appear in Home News) ---
-  { id: '1', date: '2026-02-05', title: 'Inter-House Swimming Meet', type: 'sports', isSpecial: true, time: '8:30 AM', description: 'Annual swimming championship at the College pool.', image: "https://images.unsplash.com/photo-1530549387631-afb168511dca?w=500&q=80" },
-  { id: '2', date: '2026-02-22', title: "Founder's Day Service", type: 'admin', isSpecial: true, time: '7:30 AM', description: 'Special service held at the College Chapel.', image: "https://images.unsplash.com/photo-1523580494863-6f3031224c94?w=500&q=80" },
-  { id: '3', date: '2026-03-12', title: 'Science & Tech Expo', type: 'academic', isSpecial: true, time: '9:00 AM', description: 'Student projects on display at the Main Hall.', image: "https://images.unsplash.com/photo-1564325724739-bae0bd08bc62?w=500&q=80" },
-  { id: '4', date: '2026-03-28', title: 'Battle of the Blues', type: 'sports', isSpecial: true, time: '9:30 AM', description: 'S. Thomas vs Royal College Cricket Encounter.', image: "https://images.unsplash.com/photo-1531415074968-036ba1b575da?w=500&q=80" },
-  
-  // --- NORMAL EVENTS (Will NOT appear in Home News) ---
-  { id: '5', date: '2026-04-10', title: 'First Term Ends', type: 'academic', isSpecial: false, time: '1:30 PM', description: 'School closes for the April holidays.' },
-  { id: '6', date: '2026-04-13', title: 'Sinhala & Tamil New Year', type: 'holiday', isSpecial: false, time: 'All Day', description: 'Public Holiday.' },
-  { id: '7', date: '2026-05-04', title: 'Second Term Begins', type: 'academic', isSpecial: false, time: '7:30 AM', description: 'All students must report in full uniform.' },
-];
+
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const CATEGORIES = ["All", "Academic", "Holiday", "Sports", "Admin"];
 
 export default function SchoolCalendarScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams();
+  const teacherEmail = (params.email as string) || "";
+
+  // Helper to convert 24h "14:30" format to "02:30 PM"
+  const formatTime = (timeStr: string) => {
+    if (!timeStr) return '';
+    const [h, m] = timeStr.split(':');
+    const hours = parseInt(h, 10);
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    const formattedHours = hours % 12 || 12;
+    return `${formattedHours.toString().padStart(2, '0')}:${m} ${ampm}`;
+  };
 
   // --- STATE ---
-  const [events, setEvents] = useState(sharedCalendarEvents);
-  const [selectedMonth, setSelectedMonth] = useState(2); // Start on March (Index 2)
+  const [events, setEvents] = useState<any[]>([]);
+  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth()); 
   const [selectedCategory, setSelectedCategory] = useState("All");
+  const [isLoading, setIsLoading] = useState(true);
+
+  // --- FETCH DATA ---
+  useFocusEffect(
+    useCallback(() => {
+      let isActive = true;
+      const fetchEvents = async () => {
+        if (!teacherEmail) return;
+        setIsLoading(true);
+        try {
+          const timestamp = new Date().getTime();
+          const response = await fetch(`http://172.20.10.7:5000/api/teacher/${teacherEmail}/events?t=${timestamp}`);
+          if (response.ok && isActive) {
+            const data = await response.json();
+            // Map DB fields to UI expectations
+            const mappedEvents = data.map((evt: any) => ({
+              id: evt.id.toString(),
+              date: evt.event_date.split('T')[0],
+              title: evt.title,
+              type: evt.type.toLowerCase(),
+              isSpecial: evt.is_special,
+              time: evt.time_from === "00:00" && evt.time_to === "23:59" ? "All Day" : `${formatTime(evt.time_from)} - ${formatTime(evt.time_to)}`,
+              description: evt.description
+            }));
+            setEvents(mappedEvents);
+          }
+        } catch (error) {
+          console.error("Failed to fetch events:", error);
+        } finally {
+          if (isActive) setIsLoading(false);
+        }
+      };
+
+      fetchEvents();
+      return () => { isActive = false; };
+    }, [teacherEmail])
+  );
 
   // --- FILTERING LOGIC ---
   const filteredEvents = events.filter(event => {
@@ -123,7 +160,13 @@ export default function SchoolCalendarScreen() {
         </ScrollView>
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.eventListContent}>
+      {isLoading ? (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <ActivityIndicator size="large" color="#2563EB" />
+          <Text style={{ marginTop: 10, color: "#64748B" }}>Fetching events...</Text>
+        </View>
+      ) : (
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.eventListContent}>
         
         {filteredEvents.length > 0 ? (
           filteredEvents.map((event) => {
@@ -159,6 +202,7 @@ export default function SchoolCalendarScreen() {
         )}
 
       </ScrollView>
+      )}
     </SafeAreaView>
   );
 }

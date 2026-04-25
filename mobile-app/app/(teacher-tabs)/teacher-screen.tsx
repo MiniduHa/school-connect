@@ -15,8 +15,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { FontAwesome6, Ionicons, MaterialCommunityIcons, Feather } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
 
-// Import the Master Calendar Data to keep news consistent!
-import { sharedCalendarEvents } from "../(auth)/calendar"; 
 
 const { width } = Dimensions.get("window");
 
@@ -33,9 +31,9 @@ export default function TeacherDashboard() {
   const [dashboardData, setDashboardData] = useState<any>({
     teacher: { full_name: initialName, staff_id: "", email: initialEmail, profile_photo: null },
     todaysClasses: [],
-    pendingTasks: [],
-    urgentNoticeData: null,
-    stats: { totalClassesToday: 0, pendingTasks: 0, totalStudents: 0 }
+    specialEvents: [],
+    urgentNoticeData: [],
+    stats: { totalClassesToday: 0, totalStudents: 0 }
   });
 
   // --- MODAL STATE ---
@@ -100,28 +98,6 @@ export default function TeacherDashboard() {
     }
   };
 
-  // --- LATEST NEWS FILTERING LOGIC ---
-  const pastSpecialEvents = sharedCalendarEvents
-    .filter(event => {
-      const isPast = new Date(event.date) < new Date(); 
-      return event.isSpecial && isPast;
-    })
-    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()); 
-
-  const formatDateForNews = (dateString: string) => {
-    const options: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' };
-    return new Date(dateString).toLocaleDateString('en-US', options);
-  };
-
-  // Show a loading spinner while fetching the database
-  if (isLoading) {
-    return (
-      <View style={[styles.safeArea, { justifyContent: 'center', alignItems: 'center' }]}>
-        <ActivityIndicator size="large" color="#2563EB" />
-        <Text style={{ marginTop: 10, color: "#64748B" }}>Loading Teacher Portal...</Text>
-      </View>
-    );
-  }
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -161,11 +137,6 @@ export default function TeacherDashboard() {
                 <View style={[styles.statIconBg, { backgroundColor: "#DBEAFE" }]}><FontAwesome6 name="chalkboard-user" size={16} color="#2563EB" /></View>
                 <Text style={styles.statValue}>{dashboardData.stats.totalClassesToday}</Text>
                 <Text style={styles.statLabel}>Classes Today</Text>
-              </View>
-              <View style={styles.statBox}>
-                <View style={[styles.statIconBg, { backgroundColor: "#FEF3C7" }]}><FontAwesome6 name="clipboard-list" size={16} color="#D97706" /></View>
-                <Text style={styles.statValue}>{dashboardData.stats.pendingTasks}</Text>
-                <Text style={styles.statLabel}>Pending Tasks</Text>
               </View>
               <TouchableOpacity style={styles.statBox} activeOpacity={0.7} onPress={handleOpenStudentsModal}>
                 <View style={[styles.statIconBg, { backgroundColor: "#D1FAE5" }]}><FontAwesome6 name="users" size={16} color="#059669" /></View>
@@ -213,42 +184,24 @@ export default function TeacherDashboard() {
             </ScrollView>
 
             {/* URGENT NOTICE (Only renders if there is data in the DB) */}
-            {dashboardData.urgentNoticeData && (
-              <View style={styles.urgentNoticeCard}>
-                <View style={styles.noticeHeader}>
-                  <MaterialCommunityIcons name={dashboardData.urgentNoticeData.icon as any} size={28} color="#EF4444" />
-                  <View style={styles.noticeTitleBlock}>
-                    <Text style={styles.noticeType}>STAFF NOTICE</Text>
-                    <Text style={styles.noticeTitle}>{dashboardData.urgentNoticeData.title}</Text>
+            {dashboardData.urgentNoticeData && dashboardData.urgentNoticeData.length > 0 && (
+              dashboardData.urgentNoticeData.map((notice: any) => (
+                <View key={notice.id} style={styles.urgentNoticeCard}>
+                  <View style={styles.noticeHeader}>
+                    <MaterialCommunityIcons name={notice.icon as any} size={28} color="#EF4444" />
+                    <View style={styles.noticeTitleBlock}>
+                      <Text style={styles.noticeType}>STAFF NOTICE</Text>
+                      <Text style={styles.noticeTitle}>{notice.title}</Text>
+                    </View>
+                    <Text style={styles.noticeTime}>{notice.time}</Text>
                   </View>
-                  <Text style={styles.noticeTime}>{dashboardData.urgentNoticeData.time}</Text>
+                  <Text style={styles.noticeBody}>{notice.body}</Text>
                 </View>
-                <Text style={styles.noticeBody}>{dashboardData.urgentNoticeData.body}</Text>
-              </View>
+              ))
             )}
 
-            {/* TO-DO / PENDING TASKS */}
-            <View style={styles.sectionHeaderNew}>
-              <Text style={styles.sectionTitleNew}>PENDING TASKS</Text>
-            </View>
-            <View style={styles.tasksContainer}>
-              {dashboardData.pendingTasks.map((task: any) => (
-                <TouchableOpacity key={task.id} style={styles.taskRow} activeOpacity={0.7}>
-                  <View style={[styles.taskCheckbox, task.type === 'urgent' && styles.taskCheckboxUrgent]}>
-                    {task.type === 'urgent' && <View style={styles.urgentDot} />}
-                  </View>
-                  <View style={styles.taskInfo}>
-                    <Text style={[styles.taskTitle, task.type === 'urgent' && { color: '#EF4444' }]}>{task.title}</Text>
-                    <Text style={styles.taskDeadline}>{task.deadline}</Text>
-                  </View>
-                  <FontAwesome6 name="chevron-right" size={14} color="#CBD5E1" />
-                </TouchableOpacity>
-              ))}
-              
-              {dashboardData.pendingTasks.length === 0 && (
-                <Text style={{ color: "#16A34A", textAlign: "center", paddingVertical: 10 }}>All caught up!</Text>
-              )}
-            </View>
+
+
 
             {/* LATEST NEWS SECTION */}
             <View style={styles.sectionHeaderNew}>
@@ -259,16 +212,22 @@ export default function TeacherDashboard() {
             </View>
 
             <ScrollView horizontal pagingEnabled showsHorizontalScrollIndicator={false} contentContainerStyle={styles.newsCarouselScroll}>
-              {pastSpecialEvents.map((news) => (
-                <TouchableOpacity key={news.id} style={styles.newsCard} activeOpacity={0.9}>
-                  <ImageBackground source={{ uri: news.image }} style={styles.newsImage} imageStyle={{ borderRadius: 16 }}>
-                    <View style={styles.newsOverlay}>
-                      <Text style={styles.newsDate}>{formatDateForNews(news.date)}</Text>
-                      <Text style={styles.newsTitle} numberOfLines={2}>{news.title}</Text>
-                    </View>
-                  </ImageBackground>
-                </TouchableOpacity>
-              ))}
+              {dashboardData.specialEvents && dashboardData.specialEvents.length > 0 ? (
+                dashboardData.specialEvents.map((news: any) => (
+                  <TouchableOpacity key={news.id} style={styles.newsCard} activeOpacity={0.9}>
+                    <ImageBackground source={{ uri: news.image }} style={styles.newsImage} imageStyle={{ borderRadius: 16 }}>
+                      <View style={styles.newsOverlay}>
+                        <Text style={styles.newsDate}>{news.date}</Text>
+                        <Text style={styles.newsTitle} numberOfLines={2}>{news.title}</Text>
+                      </View>
+                    </ImageBackground>
+                  </TouchableOpacity>
+                ))
+              ) : (
+                <View style={[styles.newsCard, { justifyContent: 'center', alignItems: 'center', backgroundColor: '#F1F5F9' }]}>
+                   <Text style={{ color: '#64748B', fontStyle: 'italic' }}>No special events to display.</Text>
+                </View>
+              )}
             </ScrollView>
 
           </View>
@@ -279,7 +238,7 @@ export default function TeacherDashboard() {
           {[ 
             { icon: "home", label: "Home", route: "/(teacher-tabs)/teacher-screen" }, 
             { icon: "users", label: "Classes", route: null }, 
-            { icon: "calendar", label: "Calendar", route: "/(auth)/calendar" }, 
+            { icon: "calendar", label: "Calendar", route: "/(auth)/calendar", params: { email: initialEmail } }, 
             { icon: "info", label: "About Us", route: "/(auth)/about-us" } 
           ].map((tab, index) => {
             const isActive = index === 0; 
@@ -289,7 +248,7 @@ export default function TeacherDashboard() {
                 style={styles.tabItem}
                 onPress={() => {
                   if (tab.route && !isActive) {
-                    router.navigate({ pathname: tab.route as any, params: getNavParams() });
+                    router.navigate({ pathname: tab.route as any, params: (tab as any).params || getNavParams() });
                   }
                 }}
                 activeOpacity={0.7}
@@ -411,15 +370,7 @@ const styles = StyleSheet.create({
   noticeTime: { fontSize: 11, color: "#9CA3AF" },
   noticeBody: { fontSize: 13, color: "#475569", lineHeight: 20, fontWeight: "500" },
 
-  // Tasks
-  tasksContainer: { backgroundColor: "#FFFFFF", borderRadius: 20, padding: 15, marginBottom: 25, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2, borderWidth: 1, borderColor: "#F1F5F9" },
-  taskRow: { flexDirection: "row", alignItems: "center", paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: "#F8FAFC" },
-  taskCheckbox: { width: 24, height: 24, borderRadius: 8, borderWidth: 2, borderColor: "#E2E8F0", marginRight: 15, justifyContent: "center", alignItems: "center" },
-  taskCheckboxUrgent: { borderColor: "#FECACA", backgroundColor: "#FEF2F2" },
-  urgentDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: "#EF4444" },
-  taskInfo: { flex: 1 },
-  taskTitle: { fontSize: 15, fontWeight: "600", color: "#1E293B", marginBottom: 4 },
-  taskDeadline: { fontSize: 12, color: "#64748B" },
+
 
   // News Carousel
   newsCarouselScroll: { paddingBottom: 10, marginBottom: 20 },

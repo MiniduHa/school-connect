@@ -29,8 +29,10 @@ export default function ManageCalendar() {
   const [formMode, setFormMode] = useState<'add' | 'edit'>('add');
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
 
+  const [selectedImage, setSelectedImage] = useState<File | null>(null);
+
   const [formData, setFormData] = useState({
-    title: '', date: '', timeFrom: '', timeTo: '', location: '', type: '', audience: '', status: 'Upcoming', isSpecial: false
+    title: '', date: '', timeFrom: '', timeTo: '', location: '', type: '', status: 'Upcoming', isSpecial: false, imageUrl: ''
   });
 
   useEffect(() => {
@@ -56,9 +58,9 @@ export default function ManageCalendar() {
           timeTo: evt.time_to,
           location: evt.location,
           type: evt.type,
-          audience: evt.audience,
           status: evt.status,
-          isSpecial: evt.is_special
+          isSpecial: evt.is_special,
+          imageUrl: evt.image_url || ''
         }));
         setEvents(formattedEvents);
       }
@@ -89,16 +91,18 @@ export default function ManageCalendar() {
   const openAddModal = () => {
     setFormMode('add');
     setEditingEventId(null);
-    setFormData({ title: '', date: '', timeFrom: '', timeTo: '', location: '', type: '', audience: '', status: 'Upcoming', isSpecial: false });
+    setSelectedImage(null);
+    setFormData({ title: '', date: '', timeFrom: '', timeTo: '', location: '', type: '', status: 'Upcoming', isSpecial: false, imageUrl: '' });
     setIsFormModalOpen(true);
   };
 
   const openEditModal = (event: any) => {
     setFormMode('edit');
     setEditingEventId(event.id);
+    setSelectedImage(null);
     setFormData({
       title: event.title, date: event.date, timeFrom: event.timeFrom, timeTo: event.timeTo,
-      location: event.location, type: event.type, audience: event.audience, status: event.status, isSpecial: event.isSpecial || false
+      location: event.location, type: event.type, status: event.status, isSpecial: event.isSpecial || false, imageUrl: event.imageUrl || ''
     });
     setIsFormModalOpen(true);
   };
@@ -121,6 +125,29 @@ export default function ManageCalendar() {
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    let uploadedImageUrl = formData.imageUrl;
+
+    if (selectedImage && formData.isSpecial) {
+      const imgFormData = new FormData();
+      imgFormData.append('image', selectedImage);
+      try {
+        const uploadRes = await fetch('http://localhost:5000/api/school-admin/upload-event-image', {
+          method: 'POST',
+          body: imgFormData
+        });
+        if (uploadRes.ok) {
+          const uploadData = await uploadRes.json();
+          uploadedImageUrl = uploadData.imageUrl;
+        } else {
+          alert('Failed to upload image. Submitting event without image.');
+        }
+      } catch (e) {
+        alert('Server error uploading image.');
+      }
+    }
+
+    const payload = { ...formData, imageUrl: uploadedImageUrl };
+
     const url = formMode === 'add' 
       ? `http://localhost:5000/api/school-admin/${adminEmail}/events`
       : `http://localhost:5000/api/school-admin/${adminEmail}/events/${editingEventId}`;
@@ -131,7 +158,7 @@ export default function ManageCalendar() {
       const res = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData)
+        body: JSON.stringify(payload)
       });
 
       if (res.ok) {
@@ -380,28 +407,18 @@ export default function ManageCalendar() {
                       <label className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Location / Venue</label>
                       <input type="text" required placeholder="e.g. College Main Ground" value={formData.location} onChange={(e) => setFormData({...formData, location: e.target.value})} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-100 focus:border-blue-500 text-sm" />
                     </div>
-                    <div className="flex flex-col gap-1.5">
-                      <label className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Target Audience</label>
-                      <select 
-                        required 
-                        value={formData.audience} 
-                        onChange={(e) => setFormData({...formData, audience: e.target.value})} 
-                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-100 focus:border-blue-500 text-sm text-slate-700"
-                      >
-                        <option value="" disabled>Select Target Audience</option>
-                        <option value="All Students & Staff">All Students & Staff</option>
-                        <option value="All Students">All Students</option>
-                        <option value="All Teaching Staff">All Teaching Staff</option>
-                        <option value="Parents (All Grades)">Parents (All Grades)</option>
-                        <option value="O/L Students (Grades 10-11)">O/L Students (Grades 10-11)</option>
-                        <option value="A/L Students (Grades 12-13)">A/L Students (Grades 12-13)</option>
-                        <option value="Grade 10 Students & Parents">Grade 10 Students & Parents</option>
-                        <option value="Grade 11 Students & Parents">Grade 11 Students & Parents</option>
-                        <option value="Grade 12 Students & Parents">Grade 12 Students & Parents</option>
-                        <option value="Grade 13 Students & Parents">Grade 13 Students & Parents</option>
-                        <option value="Specific Section (See Title)">Specific Section (See Title)</option>
-                      </select>
-                    </div>
+                    {formData.isSpecial && (
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Event Banner Image</label>
+                        <input 
+                          type="file" 
+                          accept="image/*"
+                          onChange={(e) => setSelectedImage(e.target.files ? e.target.files[0] : null)}
+                          className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-100 text-sm text-slate-700 font-medium"
+                        />
+                        {formData.imageUrl && !selectedImage && <p className="text-xs text-blue-500 mt-1">Image currently assigned. Upload a new one to replace.</p>}
+                      </div>
+                    )}
                   </div>
                 </div>
 
