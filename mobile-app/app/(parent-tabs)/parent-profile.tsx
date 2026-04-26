@@ -18,6 +18,10 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { FontAwesome6, Feather, MaterialCommunityIcons, Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams, Stack } from "expo-router";
 import * as ImagePicker from 'expo-image-picker';
+import { useFocusEffect } from "expo-router";
+import { useCallback } from "react";
+
+const API_BASE = "http://172.20.10.7:5000/api/parent";
 
 export default function ParentProfileScreen() {
   const router = useRouter();
@@ -32,12 +36,13 @@ export default function ParentProfileScreen() {
 
   // --- STATE MANAGEMENT ---
   const [isEditing, setIsEditing] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   
   // Display States
   const [displayName, setDisplayName] = useState(initialName);
   const [displayEmail, setDisplayEmail] = useState(initialEmail);
   const [displayPhone, setDisplayPhone] = useState(initialPhone);
-  const [childrenList, setChildrenList] = useState<string[]>([]);
+  const [childrenList, setChildrenList] = useState<any[]>([]);
   const [currentPhotoUri, setCurrentPhotoUri] = useState<string | null>(null);
 
   // Edit States
@@ -48,25 +53,34 @@ export default function ParentProfileScreen() {
   const [newChildId, setNewChildId] = useState(""); 
   const [originalPhotoUri, setOriginalPhotoUri] = useState<string | null>(null); 
   
-  // Preferences
-  const [pushNotifications, setPushNotifications] = useState(true);
-  const [emailAlerts, setEmailAlerts] = useState(true);
-
-  useEffect(() => {
-    if (profile_photo_url && profile_photo_url !== "null") {
-      setCurrentPhotoUri(profile_photo_url);
-      setOriginalPhotoUri(profile_photo_url);
-    }
-    if (child_ids) {
-      try {
-        const parsed = JSON.parse(child_ids);
-        setChildrenList(parsed);
-        setEditChildrenList(parsed);
-      } catch (error) {
-        console.error("Failed to parse child IDs");
-      }
-    }
-  }, [child_ids, profile_photo_url]);
+  // Fetch real data from backend
+  useFocusEffect(
+    useCallback(() => {
+      let isActive = true;
+      const fetchProfileData = async () => {
+        try {
+          const timestamp = new Date().getTime();
+          const response = await fetch(`${API_BASE}/profile/${initialEmail}?t=${timestamp}`);
+          if (response.ok && isActive) {
+            const data = await response.json();
+            setDisplayName(data.full_name);
+            setDisplayEmail(data.email);
+            setDisplayPhone(data.phone_number);
+            setChildrenList(data.children || []);
+            setEditChildrenList(data.child_student_ids || []);
+            if (data.profile_photo_url) {
+              setCurrentPhotoUri(data.profile_photo_url);
+              setOriginalPhotoUri(data.profile_photo_url);
+            }
+          }
+        } catch (error) {
+          console.error("Failed to fetch parent profile:", error);
+        }
+      };
+      if (initialEmail) fetchProfileData();
+      return () => { isActive = false; };
+    }, [initialEmail])
+  );
 
   // --- NAVIGATION: Pass new data back to Home! ---
   const handleGoBack = () => {
@@ -104,7 +118,7 @@ export default function ParentProfileScreen() {
     setEditName(displayName);
     setEditEmail(displayEmail);
     setEditPhone(displayPhone);
-    setEditChildrenList([...childrenList]);
+    setEditChildrenList(childrenList.map(child => child.studentId));
     setIsEditing(true);
   };
 
@@ -113,20 +127,40 @@ export default function ParentProfileScreen() {
     setIsEditing(false);
   };
 
-  const handleSave = () => {
-    // 100% Frontend Only - Update local states
-    setDisplayName(editName);
-    setDisplayEmail(editEmail);
-    setDisplayPhone(editPhone);
-    setChildrenList([...editChildrenList]);
-    setOriginalPhotoUri(currentPhotoUri);
-    
-    setIsEditing(false);
-    
-    // Once they hit OK, we navigate back to Home and hand it the new data!
-    Alert.alert("Success", "Profile updated locally!", [
-      { text: "OK", onPress: handleGoBack }
-    ]);
+  const handleSave = async () => {
+    setIsLoading(true);
+    try {
+      const response = await fetch(`${API_BASE}/profile/${displayEmail}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          full_name: editName,
+          phone_number: editPhone,
+          child_student_ids: editChildrenList
+        })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setDisplayName(editName);
+        setDisplayEmail(editEmail);
+        setDisplayPhone(editPhone);
+        setOriginalPhotoUri(currentPhotoUri);
+        setIsEditing(false);
+        
+        Alert.alert("Success", "Profile updated successfully!", [
+          { text: "OK", onPress: handleGoBack }
+        ]);
+      } else {
+        const err = await response.json();
+        Alert.alert("Error", err.error || "Failed to update profile.");
+      }
+    } catch (error) {
+      console.error("Update error:", error);
+      Alert.alert("Error", "Network error updating profile.");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleLogout = () => {
@@ -154,16 +188,64 @@ export default function ParentProfileScreen() {
     Alert.alert("Profile Photo", "Choose an option", [
         { text: "Camera", onPress: openCamera },
         { text: "Gallery", onPress: openGallery },
-        { text: "Remove Photo", onPress: () => setCurrentPhotoUri(null), style: "destructive" },
+        { text: "Remove Photo", onPress: handleRemovePhoto, style: "destructive" },
         { text: "Cancel", style: "cancel" }
     ]);
+  };
+
+  const uploadPhoto = async (uri: string) => {
+    setIsLoading(true);
+    const formData = new FormData();
+    const fileType = uri.split('.').pop() || 'jpg';
+    
+    formData.append('photo', {
+      uri,
+      name: `photo.${fileType}`,
+      type: `image/${fileType}`
+    } as any);
+    formData.append('email', displayEmail);
+
+    try {
+      const response = await fetch(`${API_BASE}/upload-avatar`, {
+        method: 'POST',
+        body: formData,
+        headers: {
+          'Accept': 'application/json',
+        },
+      });
+      const result = await response.json();
+      if (response.ok && result.photoUrl) {
+        setCurrentPhotoUri(result.photoUrl);
+        setOriginalPhotoUri(result.photoUrl);
+      } else {
+        Alert.alert("Upload Failed", result.error || "Something went wrong.");
+      }
+    } catch (error) {
+      console.error("Error uploading photo:", error);
+      Alert.alert("Error", "Could not connect to the server.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleRemovePhoto = async () => {
+    setCurrentPhotoUri(null);
+    try {
+      await fetch(`${API_BASE}/remove-avatar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: displayEmail })
+      });
+    } catch (error) {
+      console.error("Error removing photo:", error);
+    }
   };
 
   const openCamera = async () => {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== 'granted') return Alert.alert("Permission Denied", "Enable camera access in settings.", [{ text: "Cancel", style: "cancel" }, { text: "Settings", onPress: () => Linking.openSettings() }]);
     const result = await ImagePicker.launchCameraAsync({ allowsEditing: true, aspect: [1, 1], quality: 0.5 });
-    if (!result.canceled) setCurrentPhotoUri(result.assets[0].uri);
+    if (!result.canceled) uploadPhoto(result.assets[0].uri);
   };
 
   const openGallery = async () => {
@@ -177,7 +259,7 @@ export default function ParentProfileScreen() {
       }
     }
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, aspect: [1, 1], quality: 0.5 });
-    if (!result.canceled) setCurrentPhotoUri(result.assets[0].uri);
+    if (!result.canceled) uploadPhoto(result.assets[0].uri);
   };
 
   const InfoRow = ({ label, value }: { label: string, value: string }) => (
@@ -258,14 +340,14 @@ export default function ParentProfileScreen() {
               <View style={styles.card}>
                 <Text style={styles.cardTitle}>Linked Children</Text>
                 {childrenList.length > 0 ? (
-                  childrenList.map((id, index) => (
+                  childrenList.map((child, index) => (
                     <View key={index} style={styles.childRowView}>
                       <View style={styles.childAvatarBg}>
                         <FontAwesome6 name="child" size={16} color="#059669" />
                       </View>
                       <View style={{ flex: 1 }}>
-                        <Text style={styles.childNameView}>Student {index + 1}</Text>
-                        <Text style={styles.childIdView}>ID: {id}</Text>
+                        <Text style={styles.childNameView}>{child.name}</Text>
+                        <Text style={styles.childIdView}>ID: {child.studentId} • {child.class}</Text>
                       </View>
                     </View>
                   ))
@@ -275,10 +357,14 @@ export default function ParentProfileScreen() {
               </View>
 
               <View style={styles.card}>
-                <Text style={styles.cardTitle}>Preferences</Text>
-                <InfoRow label="Push Notifications" value={pushNotifications ? "Enabled" : "Disabled"} />
-                <View style={styles.cardDivider} />
-                <InfoRow label="Email Alerts" value={emailAlerts ? "Enabled" : "Disabled"} />
+                <Text style={styles.cardTitle}>Security</Text>
+                <TouchableOpacity style={styles.securityRow} activeOpacity={0.7} onPress={() => router.push("/(auth)/forgot-password")}>
+                  <View style={[styles.iconBg, { backgroundColor: '#FEE2E2', marginRight: 15 }]}>
+                    <Feather name="lock" size={20} color="#EF4444" />
+                  </View>
+                  <Text style={styles.securityText}>Change Password</Text>
+                  <FontAwesome6 name="chevron-right" size={14} color="#CBD5E1" />
+                </TouchableOpacity>
               </View>
 
               <TouchableOpacity style={styles.logoutButton} onPress={handleLogout} activeOpacity={0.8}>
@@ -390,58 +476,6 @@ export default function ParentProfileScreen() {
                 </View>
               </View>
 
-              {/* App Permissions Section */}
-              <View style={styles.card}>
-                <Text style={styles.cardTitle}>App Permissions</Text>
-                <View style={styles.switchRow}>
-                  <View>
-                    <Text style={styles.infoLabel}>Photo Gallery Access</Text>
-                    <Text style={styles.helperText}>Used for profile & chat photos</Text>
-                  </View>
-                  <TouchableOpacity onPress={() => Linking.openSettings()} style={styles.manageBtn}>
-                    <Text style={styles.manageBtnText}>Manage</Text>
-                  </TouchableOpacity>
-                </View>
-                <View style={styles.cardDivider} />
-                <View style={styles.switchRow}>
-                  <View>
-                    <Text style={styles.infoLabel}>Camera Access</Text>
-                    <Text style={styles.helperText}>Used for taking live photos</Text>
-                  </View>
-                  <TouchableOpacity onPress={() => Linking.openSettings()} style={styles.manageBtn}>
-                    <Text style={styles.manageBtnText}>Manage</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              <View style={styles.card}>
-                <Text style={styles.cardTitle}>Notification Settings</Text>
-                <View style={styles.switchRow}>
-                  <View>
-                    <Text style={styles.infoLabel}>Push Notifications</Text>
-                    <Text style={styles.helperText}>Receive instant alerts</Text>
-                  </View>
-                  <Switch 
-                    value={pushNotifications} 
-                    onValueChange={setPushNotifications}
-                    trackColor={{ false: "#E2E8F0", true: "#BFDBFE" }}
-                    thumbColor={pushNotifications ? "#2563EB" : "#9CA3AF"}
-                  />
-                </View>
-                <View style={styles.cardDivider} />
-                <View style={styles.switchRow}>
-                  <View>
-                    <Text style={styles.infoLabel}>Email Alerts</Text>
-                    <Text style={styles.helperText}>Receive daily summaries</Text>
-                  </View>
-                  <Switch 
-                    value={emailAlerts} 
-                    onValueChange={setEmailAlerts}
-                    trackColor={{ false: "#E2E8F0", true: "#BFDBFE" }}
-                    thumbColor={emailAlerts ? "#2563EB" : "#9CA3AF"}
-                  />
-                </View>
-              </View>
 
             </View>
           )}
@@ -499,5 +533,8 @@ const styles = StyleSheet.create({
   label: { fontSize: 13, fontWeight: "bold", color: "#1E293B", marginBottom: 8 },
   input: { backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#E2E8F0", borderRadius: 12, padding: 16, fontSize: 15, color: "#1E293B" },
   logoutButton: { flexDirection: "row", justifyContent: "center", alignItems: "center", marginTop: 10, paddingVertical: 14, borderRadius: 12, borderWidth: 1, borderColor: "#FECACA", backgroundColor: "#FEF2F2" },
-  logoutButtonText: { color: "#EF4444", fontSize: 15, fontWeight: "bold" }
+  logoutButtonText: { color: "#EF4444", fontSize: 15, fontWeight: "bold" },
+  securityRow: { flexDirection: "row", alignItems: "center", paddingVertical: 10 },
+  securityText: { flex: 1, fontSize: 15, fontWeight: "600", color: "#1E293B" },
+  iconBg: { width: 40, height: 40, borderRadius: 12, justifyContent: "center", alignItems: "center" }
 });

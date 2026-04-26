@@ -6,7 +6,9 @@ import {
   ScrollView, 
   TouchableOpacity, 
   Dimensions,
-  Image
+  Image,
+  ImageBackground,
+  ActivityIndicator
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context"; 
 import { FontAwesome6, Ionicons, MaterialCommunityIcons, Feather } from "@expo/vector-icons";
@@ -16,19 +18,7 @@ const { width } = Dimensions.get("window");
 
 let globalEmailCache = ""; 
 
-const childProfiles = {
-  "ST001": { name: "Arjun Perera", grade: "Grade 8-B", school: "S. Thomas' College", avatarUrl: null },
-  "ST002": { name: "Fatima Ali", grade: "Grade 6-A", school: "S. Thomas' College", avatarUrl: null },
-};
-
-const childAcademics = {
-  "ST001": { attendance: "92%", avgGrade: "A-", rank: "5th", term: "Term 2", subjects: [{ name: "Mathematics", marks: 88, grade: "A" }, { name: "Science", marks: 76, grade: "B" }, { name: "English", marks: 92, grade: "A" }, { name: "History", marks: 85, grade: "A" }] },
-  "ST002": { attendance: "98%", avgGrade: "A+", rank: "1st", term: "Term 2", subjects: [{ name: "Mathematics", marks: 95, grade: "A" }, { name: "Science", marks: 98, grade: "A" }, { name: "English", marks: 94, grade: "A" }, { name: "Geography", marks: 89, grade: "A" }] }
-};
-
-const urgentNoticeData = { icon: "bullhorn", title: "Sports Meet Postponed", time: "2h ago", body: "Due to weather conditions, the Inter-House Sports Meet is rescheduled for Friday." };
-const upcomingEventData = { icon: "calendar-month", dateMonth: "OCT", dateDay: "20", dateYear: "2026", title: "PTA Meeting" };
-const pendingPaymentData = { icon: "credit-card", status: "Due in 5 days", amount: "LKR 4,500.00" };
+// Static constants moved to dashboard state
 
 export default function ParentDashboard() {
   const router = useRouter(); 
@@ -37,13 +27,18 @@ export default function ParentDashboard() {
   if (params.email) globalEmailCache = params.email as string;
   const userEmail = globalEmailCache;
 
-  const [parentData, setParentData] = useState({
-    full_name: (params.full_name as string) || "Parent",
-    email: userEmail,
-    profile_photo_url: (params.profile_photo_url as string) || "null"
+  const [isLoading, setIsLoading] = useState(true);
+  const [dashboardData, setDashboardData] = useState<any>({
+    parent: {
+      full_name: (params.full_name as string) || "Parent",
+      email: userEmail,
+      profile_photo: (params.profile_photo_url as string) || null
+    },
+    children: [],
+    urgentNotices: [],
+    specialEvents: []
   });
 
-  const [childrenList, setChildrenList] = useState<string[]>([]);
   const [activeChildId, setActiveChildId] = useState<string | null>(null);
 
   const [messages, setMessages] = useState([
@@ -52,57 +47,54 @@ export default function ParentDashboard() {
     { id: 3, icon: "bullhorn", sender: "School Admin", time: "Oct 12", snippet: "Invitation: Annual Founder's Day Dinner", unread: true },
   ]);
 
-  useEffect(() => {
-    if (params.child_ids && typeof params.child_ids === 'string') {
-      try {
-        const parsedIds = JSON.parse(params.child_ids);
-        setChildrenList(parsedIds);
-        if (parsedIds.length > 0 && !activeChildId) setActiveChildId(parsedIds[0]);
-      } catch (error) {}
-    }
-  }, [params.child_ids]);
-
   useFocusEffect(
     useCallback(() => {
-      const fetchFreshData = async () => {
+      let isActive = true;
+      const fetchDashboardData = async () => {
         if (!userEmail) return;
+        setIsLoading(true);
         try {
-          const response = await fetch(`http://172.20.10.7:5000/api/parents/${userEmail}`);
-          if (response.ok) {
+          const timestamp = new Date().getTime();
+          const response = await fetch(`http://172.20.10.7:5000/api/parent/${userEmail}/dashboard?t=${timestamp}`);
+          if (response.ok && isActive) {
             const data = await response.json();
-            setParentData({
-              full_name: data.user.full_name,
-              email: data.user.email,
-              profile_photo_url: data.user.profile_photo_url || "null"
-            });
-            const fetchedChildren = data.user.child_student_ids || [];
-            setChildrenList(fetchedChildren);
-            if (fetchedChildren.length > 0 && !activeChildId) {
-              setActiveChildId(fetchedChildren[0]);
+            setDashboardData(data);
+            if (data.children && data.children.length > 0 && !activeChildId) {
+              setActiveChildId(data.children[0].studentId);
             }
           }
         } catch (error) {
-          console.log("Silent fetch failed:", error);
+          console.error("Failed to fetch parent dashboard data:", error);
+        } finally {
+          if (isActive) setIsLoading(false);
         }
       };
-      fetchFreshData();
+      fetchDashboardData();
+      return () => { isActive = false; };
     }, [userEmail])
   );
 
-  const firstName = parentData.full_name ? parentData.full_name.split(" ")[0] : "Parent";
 
   const handleReadMessage = (id: number) => {
     setMessages(messages.map(msg => msg.id === id ? { ...msg, unread: false } : msg));
   };
 
-  const currentAcademics = activeChildId ? childAcademics[activeChildId as keyof typeof childAcademics] : null;
+  const currentAcademics = activeChildId ? (dashboardData.children || []).find((c: any) => c.studentId === activeChildId)?.academics : null;
 
   const getNavParams = () => ({
-    full_name: parentData.full_name,
-    email: parentData.email,
-    child_ids: JSON.stringify(childrenList),
-    profile_photo_url: parentData.profile_photo_url
+    email: dashboardData.parent.email || userEmail, 
+    full_name: dashboardData.parent.full_name || "Parent",
+    profile_photo_url: dashboardData.parent.profile_photo || "null",
+    child_ids: JSON.stringify(dashboardData.children?.map((c: any) => c.studentId) || [])
   });
+
+  if (isLoading) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator size="large" color="#2563EB" />
+      </View>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -114,17 +106,17 @@ export default function ParentDashboard() {
               <TouchableOpacity 
                 activeOpacity={0.7} 
                 style={styles.avatarTouchTarget}
-                onPress={() => router.push({ pathname: "/(parent-tabs)/parent-profile", params: getNavParams() })}
+                onPress={() => router.push({ pathname: "/(parent-tabs)/parent-profile", params: getNavParams() as any })}
               >
-                {parentData.profile_photo_url && parentData.profile_photo_url !== "null" ? (
-                  <Image source={{ uri: parentData.profile_photo_url }} style={styles.avatarHeader} />
+                {dashboardData.parent.profile_photo && dashboardData.parent.profile_photo !== "null" ? (
+                  <Image source={{ uri: dashboardData.parent.profile_photo }} style={styles.avatarHeader} />
                 ) : (
                   <FontAwesome6 name="circle-user" size={46} color="#2563EB" />
                 )}
               </TouchableOpacity>
               <View>
-                <Text style={styles.greeting}>Hello, {firstName}</Text>
-                <Text style={styles.subtext}>Parent Dashboard</Text>
+                <Text style={styles.greeting}>Hello, {(dashboardData.parent.full_name || "Parent").split(" ")[0]}</Text>
+                <Text style={styles.subtext}>Welcome back</Text>
               </View>
             </View>
             <TouchableOpacity style={styles.notificationButton}>
@@ -142,9 +134,8 @@ export default function ParentDashboard() {
               </View>
               
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.switcherScroll}>
-                {childrenList.map((id, index) => {
-                  const isActive = activeChildId === id;
-                  const profile = childProfiles[id as keyof typeof childProfiles] || { name: `Student ID: ${id}`, grade: "Linked Student", school: "School Connect", avatarUrl: null };
+                {(dashboardData.children || []).map((child: any, index: number) => {
+                  const isActive = activeChildId === child.studentId;
                   return (
                     <TouchableOpacity 
                       key={index}
@@ -153,24 +144,20 @@ export default function ParentDashboard() {
                         if (isActive) {
                           router.push({
                             pathname: "/(parent-tabs)/child-details",
-                            params: { studentId: id, studentName: profile.name, grade: profile.grade, school: profile.school, avatarUrl: profile.avatarUrl || "null" }
+                            params: { studentId: child.studentId, studentName: child.name, grade: child.class }
                           });
                         } else {
-                          setActiveChildId(id);
+                          setActiveChildId(child.studentId);
                         }
                       }}
                       activeOpacity={0.8}
                     >
-                      {profile.avatarUrl ? (
-                        <Image source={{ uri: profile.avatarUrl }} style={styles.childAvatar} />
-                      ) : (
-                        <View style={styles.childAvatarPlaceholder}>
-                           <FontAwesome6 name="circle-user" size={40} color={isActive ? "#E0F2FE" : "#9CA3AF"} />
-                        </View>
-                      )}
+                      <View style={styles.childAvatarPlaceholder}>
+                          <FontAwesome6 name="circle-user" size={40} color={isActive ? "#E0F2FE" : "#9CA3AF"} />
+                      </View>
                       <View style={styles.childInfoText}>
-                        <Text style={[styles.childNameNew, { color: isActive ? "#FFFFFF" : "#1E293B" }]} numberOfLines={1}>{profile.name}</Text>
-                        <Text style={[styles.childSubInfo, { color: isActive ? "#E0F2FE" : "#64748B" }]} numberOfLines={1}>{`${profile.grade} • ID: ${id}`}</Text>
+                        <Text style={[styles.childNameNew, { color: isActive ? "#FFFFFF" : "#1E293B" }]} numberOfLines={1}>{child.name}</Text>
+                        <Text style={[styles.childSubInfo, { color: isActive ? "#E0F2FE" : "#64748B" }]} numberOfLines={1}>{`${child.class} • ID: ${child.studentId}`}</Text>
                       </View>
                     </TouchableOpacity>
                   );
@@ -181,7 +168,11 @@ export default function ParentDashboard() {
                 <View style={styles.academicSection}>
                   <View style={styles.sectionHeaderNew}>
                     <Text style={styles.sectionTitleNew}>ACADEMIC OVERVIEW</Text>
-                    <TouchableOpacity onPress={() => router.push({ pathname: "/(parent-tabs)/child-details", params: { studentId: activeChildId, studentName: childProfiles[activeChildId as keyof typeof childProfiles]?.name || "Student", grade: childProfiles[activeChildId as keyof typeof childProfiles]?.grade || "", avatarUrl: childProfiles[activeChildId as keyof typeof childProfiles]?.avatarUrl || "null" } })}>
+                    <TouchableOpacity onPress={() => {
+                      if (!activeChildId) return;
+                      const child = (dashboardData.children || []).find((c: any) => c.studentId === activeChildId);
+                      router.push({ pathname: "/(parent-tabs)/child-details", params: { studentId: activeChildId, studentName: child?.name || "Student", grade: child?.class || "", avatarUrl: "null" } })
+                    }}>
                       <Text style={styles.sectionLink}>Full Report</Text>
                     </TouchableOpacity>
                   </View>
@@ -208,7 +199,7 @@ export default function ParentDashboard() {
                     <View style={styles.marksHeader}>
                       <Text style={styles.marksTitle}>Recent Results ({currentAcademics.term})</Text>
                     </View>
-                    {currentAcademics.subjects.map((sub, idx) => (
+                    {currentAcademics.subjects.map((sub: any, idx: number) => (
                       <View key={idx}>
                         <View style={styles.subjectRow}>
                           <Text style={styles.subjectName}>{sub.name}</Text>
@@ -226,45 +217,74 @@ export default function ParentDashboard() {
                 </View>
               )}
 
-              <View style={styles.urgentNoticeCard}>
-                <View style={styles.noticeHeader}>
-                  <MaterialCommunityIcons name={urgentNoticeData.icon as any} size={28} color="#EF4444" />
-                  <View style={styles.noticeTitleBlock}>
-                    <Text style={styles.noticeType}>URGENT NOTICE</Text>
-                    <Text style={styles.noticeTitle}>{urgentNoticeData.title}</Text>
+              {dashboardData.urgentNotices && dashboardData.urgentNotices.length > 0 && dashboardData.urgentNotices.map((notice: any) => (
+                <View key={notice.id} style={styles.urgentNoticeCard}>
+                  <View style={styles.noticeHeader}>
+                    <MaterialCommunityIcons name={notice.icon as any} size={28} color="#EF4444" />
+                    <View style={styles.noticeTitleBlock}>
+                      <Text style={styles.noticeType}>URGENT NOTICE</Text>
+                      <Text style={styles.noticeTitle}>{notice.title}</Text>
+                    </View>
+                    <Text style={styles.noticeTime}>{notice.time}</Text>
                   </View>
-                  <Text style={styles.noticeTime}>{urgentNoticeData.time}</Text>
+                  <Text style={styles.noticeBody}>{notice.body}</Text>
                 </View>
-                <Text style={styles.noticeBody}>{urgentNoticeData.body}</Text>
+              ))}
+
+              {/* LATEST SCHOOL NEWS */}
+              <View style={styles.sectionHeaderNew}>
+                <Text style={styles.sectionTitleNew}>LATEST SCHOOL NEWS</Text>
+                <TouchableOpacity onPress={() => router.push("/(auth)/calendar")}>
+                  <Text style={styles.sectionLink}>View Calendar</Text>
+                </TouchableOpacity>
               </View>
+
+              <ScrollView horizontal pagingEnabled showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 10, marginBottom: 20 }}>
+                {dashboardData.specialEvents && dashboardData.specialEvents.length > 0 ? (
+                  dashboardData.specialEvents.map((news: any) => (
+                    <TouchableOpacity key={news.id} style={[styles.gridCard, { width: width * 0.75, height: 160, marginRight: 15, padding: 0, overflow: 'hidden' }]} activeOpacity={0.9}>
+                      <ImageBackground source={{ uri: news.image }} style={{ width: "100%", height: "100%", justifyContent: "flex-end" }}>
+                        <View style={{ backgroundColor: "rgba(0,0,0,0.5)", padding: 15 }}>
+                          <Text style={{ color: "#E2E8F0", fontSize: 11, fontWeight: "600", marginBottom: 4 }}>{news.date}</Text>
+                          <Text style={{ color: "#FFFFFF", fontSize: 16, fontWeight: "bold" }} numberOfLines={2}>{news.title}</Text>
+                        </View>
+                      </ImageBackground>
+                    </TouchableOpacity>
+                  ))
+                ) : (
+                  <View style={[styles.gridCard, { width: width * 0.75, height: 160, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F1F5F9' }]}>
+                    <Text style={{ color: '#64748B', fontStyle: 'italic' }}>No special events to display.</Text>
+                  </View>
+                )}
+              </ScrollView>
 
               <View style={styles.gridRow}>
                 <View style={styles.gridCard}>
                   <View style={styles.gridCardHeader}>
-                    <MaterialCommunityIcons name={upcomingEventData.icon as any} size={24} color="#2563EB" />
+                    <MaterialCommunityIcons name="calendar-month" size={24} color="#2563EB" />
                     <Text style={styles.cardStatusLabel}>UPCOMING</Text>
                   </View>
-                  <Text style={styles.eventDate}>{`${upcomingEventData.dateMonth} ${upcomingEventData.dateDay}, ${upcomingEventData.dateYear}`}</Text>
-                  <Text style={styles.eventTitle}>{upcomingEventData.title}</Text>
+                  <Text style={styles.eventDate}>OCT 20, 2026</Text>
+                  <Text style={styles.eventTitle}>PTA Meeting</Text>
                 </View>
                 <View style={styles.gridCard}>
                   <View style={styles.gridCardHeader}>
-                    <MaterialCommunityIcons name={pendingPaymentData.icon as any} size={24} color="#D97706" />
+                    <MaterialCommunityIcons name="credit-card" size={24} color="#D97706" />
                     <Text style={[styles.cardStatusLabel, { color: "#D97706" }]}>PENDING</Text>
                   </View>
-                  <Text style={styles.paymentStatus}>{pendingPaymentData.status}</Text>
-                  <Text style={styles.paymentAmount}>{pendingPaymentData.amount}</Text>
+                  <Text style={styles.paymentStatus}>Due in 5 days</Text>
+                  <Text style={styles.paymentAmount}>LKR 4,500.00</Text>
                 </View>
               </View>
 
               <View style={styles.sectionHeaderNew}>
                 <Text style={styles.sectionTitleNew}>RECENT MESSAGES</Text>
-                <TouchableOpacity onPress={() => router.push({ pathname: "/(parent-tabs)/parent-messages", params: getNavParams() })}>
+                <TouchableOpacity onPress={() => router.push({ pathname: "/(parent-tabs)/parent-messages", params: getNavParams() as any })}>
                   <Text style={styles.sectionLink}>Read All</Text>
                 </TouchableOpacity>
               </View>
               <View style={styles.messagesList}>
-                {messages.map(msg => (
+                {messages.map((msg: any) => (
                   <TouchableOpacity 
                     key={msg.id} 
                     style={[styles.messageCard, msg.unread && styles.messageCardUnread]} 
@@ -303,7 +323,7 @@ export default function ParentDashboard() {
             { icon: "message-square", label: "Messages", route: "/(parent-tabs)/parent-messages" }, 
             { icon: "calendar", label: "Calendar", route: "/(auth)/calendar" }, 
             { icon: "info", label: "About Us", route: "/(auth)/about-us" } 
-          ].map((tab, index) => {
+          ].map((tab: any, index: number) => {
             const isActive = index === 0; 
             return (
               <TouchableOpacity 
@@ -311,7 +331,7 @@ export default function ParentDashboard() {
                 style={styles.tabItem}
                 onPress={() => {
                   if (tab.route && !isActive) {
-                    router.navigate({ pathname: tab.route as any, params: getNavParams() });
+                    router.navigate({ pathname: tab.route as any, params: getNavParams() as any });
                   }
                 }}
                 activeOpacity={0.7}

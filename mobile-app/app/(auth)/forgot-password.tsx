@@ -14,7 +14,7 @@ import {
   Dimensions
 } from "react-native";
 import { FontAwesome6, Ionicons } from "@expo/vector-icons";
-import { useRouter, useLocalSearchParams } from "expo-router";
+import { useRouter } from "expo-router";
 
 const { height } = Dimensions.get("window");
 
@@ -23,7 +23,6 @@ const API_BASE = "http://172.20.10.7:5000/api/auth";
 
 export default function ForgotPasswordScreen() {
   const router = useRouter();
-  const { role } = useLocalSearchParams(); // Captures "Student", "Parent", etc.
   
   const [step, setStep] = useState<1 | 2 | 3>(1); 
   const [isLoading, setIsLoading] = useState(false);
@@ -40,10 +39,11 @@ export default function ForgotPasswordScreen() {
     setIsLoading(true);
     
     try {
+      // Notice: No 'role' needed anymore! The backend is smart now.
       const response = await fetch(`${API_BASE}/forgot-password`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.toLowerCase().trim(), role }),
+        body: JSON.stringify({ email: email.toLowerCase().trim() }),
       });
       const data = await response.json();
 
@@ -92,12 +92,12 @@ export default function ForgotPasswordScreen() {
     setIsLoading(true);
 
     try {
+      // Notice: No 'role' needed here either!
       const response = await fetch(`${API_BASE}/reset-password`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
           email: email.toLowerCase().trim(), 
-          role, 
           newPassword 
         }),
       });
@@ -172,7 +172,6 @@ export default function ForgotPasswordScreen() {
                 <View style={styles.inputGroup}>
                   <Text style={styles.label}>6-Digit Code</Text>
                   <TextInput
-                    // MOVED fontSize and letterSpacing INTO THE STYLE PROP HERE 👇
                     style={[styles.input, { fontSize: 24, letterSpacing: 8 }]} 
                     placeholder="• • • • • •"
                     placeholderTextColor="#9CA3AF"

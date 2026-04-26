@@ -239,21 +239,36 @@ const otpStore = new Map();
 
 app.post('/api/auth/forgot-password', async (req, res) => {
   try {
-    const { email, role } = req.body;
-    let tableToUpdate = null;
+    const { email } = req.body; 
     
-    if (role === 'Student') tableToUpdate = 'students';
-    else if (role === 'Parent') tableToUpdate = 'parents';
-    else if (role === 'Teacher') tableToUpdate = 'teachers';
-    
-    if (!tableToUpdate) return res.status(400).json({ error: "Invalid role for password reset." });
-
+    if (!email) return res.status(400).json({ error: "Email is required." });
     const cleanEmail = email.toLowerCase().trim();
-    const userResult = await db.query(`SELECT id FROM ${tableToUpdate} WHERE email = $1`, [cleanEmail]);
-    if (userResult.rows.length === 0) return res.status(404).json({ error: "Account not found." });
+    
+    let tableToUpdate = null;
+    let userRecord = null;
+
+    // Smart Cascade Search: Check Students first
+    let result = await db.query('SELECT id FROM students WHERE email = $1', [cleanEmail]);
+    if (result.rows.length > 0) { tableToUpdate = 'students'; userRecord = result.rows[0]; }
+
+    // Check Parents if not found
+    if (!userRecord) {
+      result = await db.query('SELECT id FROM parents WHERE email = $1', [cleanEmail]);
+      if (result.rows.length > 0) { tableToUpdate = 'parents'; userRecord = result.rows[0]; }
+    }
+
+    // Check Teachers if not found
+    if (!userRecord) {
+      result = await db.query('SELECT id FROM teachers WHERE email = $1', [cleanEmail]);
+      if (result.rows.length > 0) { tableToUpdate = 'teachers'; userRecord = result.rows[0]; }
+    }
+
+    if (!userRecord) return res.status(404).json({ error: "Account not found." });
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    otpStore.set(cleanEmail, { otp, expires: Date.now() + 15 * 60000 });
+    
+    // Store the table dynamically in memory!
+    otpStore.set(cleanEmail, { otp, tableToUpdate, expires: Date.now() + 15 * 60000 });
 
     const transporter = nodemailer.createTransport({
       service: 'gmail', 
@@ -277,7 +292,6 @@ app.post('/api/auth/forgot-password', async (req, res) => {
     }
 
     res.json({ message: "OTP sent successfully." });
-
   } catch (error) {
     console.error("Forgot Password Error:", error.message);
     res.status(500).json({ error: "Server error." });
@@ -301,18 +315,14 @@ app.post('/api/auth/verify-otp', async (req, res) => {
 
 app.post('/api/auth/reset-password', async (req, res) => {
   try {
-    const { email, role, newPassword } = req.body;
+    const { email, newPassword } = req.body; 
     const cleanEmail = email.toLowerCase().trim();
-    
-    let tableToUpdate = null;
-    if (role === 'Student') tableToUpdate = 'students';
-    else if (role === 'Parent') tableToUpdate = 'parents';
-    else if (role === 'Teacher') tableToUpdate = 'teachers';
-
-    if (!tableToUpdate) return res.status(400).json({ error: "Invalid role." });
 
     const record = otpStore.get(cleanEmail);
     if (!record) return res.status(400).json({ error: "Session expired. Try again." });
+
+    // Look up the correct table we saved during step 1
+    const tableToUpdate = record.tableToUpdate; 
 
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(newPassword, salt);
@@ -434,7 +444,6 @@ app.get('/api/teacher/:email/dashboard', async (req, res) => {
       };
     });
 
-    // Fetch Special Events (Filtered against strict local boundary)
     let specialEvents = [];
     try {
       const specialRes = await db.query(
@@ -461,7 +470,6 @@ app.get('/api/teacher/:email/dashboard', async (req, res) => {
       console.error("Failed to fetch special events:", err);
     }
     
-    // Fetch Urgent Notice (NO date filter - keeps past active urgent notices visible)
     let urgentNoticeData = [];
     try {
       const noticeRes = await db.query(
@@ -493,7 +501,6 @@ app.get('/api/teacher/:email/dashboard', async (req, res) => {
       console.error("Failed to fetch urgent notice:", err);
     }
 
-    // Fetch ALL Relevant Notices for Notification Dropdown (NO DATE FILTER)
     let allNotices = [];
     try {
       const allNoticesRes = await db.query(
@@ -521,7 +528,6 @@ app.get('/api/teacher/:email/dashboard', async (req, res) => {
       console.error("Failed to fetch all notices:", err);
     }
 
-    // 4. Calculate actual total distinct students taught by this teacher
     let realTotalStudents = 0;
     try {
       const studentCountRes = await db.query(
@@ -732,6 +738,97 @@ app.post('/api/teacher/remove-avatar', async (req, res) => {
   }
 });
 
+
+// ---> PARENT PROFILE API ROUTES <---
+app.get('/api/parent/profile/:email', async (req, res) => {
+  try {
+    const { email } = req.params;
+    const cleanEmail = email.toLowerCase().trim();
+
+    // 1. Fetch Parent
+    const parentRes = await db.query(
+      'SELECT id, full_name, email, phone_number, child_student_ids, profile_photo_url FROM parents WHERE email = $1',
+      [cleanEmail]
+    );
+
+    if (parentRes.rows.length === 0) return res.status(404).json({ error: "Parent not found" });
+    const parent = parentRes.rows[0];
+
+    // 2. Fetch Children Details
+    let childrenDetails = [];
+    if (parent.child_student_ids && parent.child_student_ids.length > 0) {
+      const childrenRes = await db.query(
+        'SELECT first_name, last_name, index_number, grade_level, section FROM students WHERE index_number = ANY($1)',
+        [parent.child_student_ids]
+      );
+      childrenDetails = childrenRes.rows.map(child => ({
+        name: `${child.first_name} ${child.last_name}`,
+        studentId: child.index_number,
+        class: `${child.grade_level} - ${child.section}`
+      }));
+    }
+
+    res.json({ ...parent, children: childrenDetails });
+  } catch (error) {
+    console.error("Parent Profile Error:", error);
+    res.status(500).json({ error: "Server error fetching parent profile." });
+  }
+});
+
+app.put('/api/parent/profile/:email', async (req, res) => {
+  try {
+    const { email } = req.params;
+    const { full_name, phone_number, child_student_ids } = req.body;
+    const cleanEmail = email.toLowerCase().trim();
+
+    const result = await db.query(
+      'UPDATE parents SET full_name = $1, phone_number = $2, child_student_ids = $3 WHERE email = $4 RETURNING *',
+      [full_name, phone_number, child_student_ids, cleanEmail]
+    );
+
+    if (result.rows.length === 0) return res.status(404).json({ error: "Parent not found" });
+    res.json({ message: "Profile updated successfully", parent: result.rows[0] });
+  } catch (error) {
+    console.error("Update Parent Profile Error:", error);
+    res.status(500).json({ error: "Server error updating parent profile." });
+  }
+});
+
+app.post('/api/parent/upload-avatar', upload.single('photo'), async (req, res) => {
+  try {
+    const { email } = req.body;
+    const cleanEmail = email.toLowerCase().trim();
+
+    const file = req.file;
+    if (!file) return res.status(400).json({ error: "No photo uploaded." });
+
+    const fileExt = file.originalname ? file.originalname.split('.').pop() : 'jpg';
+    const fileName = `parent_${cleanEmail.replace(/[@.]/g, '_')}_${Date.now()}.${fileExt}`;
+
+    const { error: uploadError } = await supabase.storage.from('avatars').upload(fileName, file.buffer, { contentType: file.mimetype, upsert: true });
+    if (uploadError) throw uploadError;
+
+    const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(fileName);
+    await db.query('UPDATE parents SET profile_photo_url = $1 WHERE email = $2', [publicUrl, cleanEmail]);
+
+    res.json({ message: "Photo uploaded successfully", photoUrl: publicUrl });
+  } catch (error) {
+    console.error("Error uploading parent avatar:", error);
+    res.status(500).json({ error: "Server error during parent photo upload." });
+  }
+});
+
+app.post('/api/parent/remove-avatar', async (req, res) => {
+  try {
+    const { email } = req.body;
+    const cleanEmail = email.toLowerCase().trim();
+    await db.query('UPDATE parents SET profile_photo_url = NULL WHERE email = $1', [cleanEmail]);
+    res.json({ message: "Photo removed successfully" });
+  } catch (error) {
+    console.error("Error removing parent avatar:", error);
+    res.status(500).json({ error: "Server error removing parent photo." });
+  }
+});
 
 // ---> SCHOOL PROFILE API ROUTES <---
 
@@ -970,6 +1067,111 @@ app.get('/api/student/:studentId/materials', async (req, res) => {
   }
 });
 
+
+// --- PARENT DASHBOARD API ---
+app.get('/api/parent/:email/dashboard', async (req, res) => {
+  try {
+    const { email } = req.params;
+    const cleanEmail = email.toLowerCase().trim();
+
+    // 1. Fetch parent details
+    const parentRes = await db.query(
+      'SELECT id, full_name, email, phone_number, child_student_ids, school_id, profile_photo_url FROM parents WHERE email = $1',
+      [cleanEmail]
+    );
+
+    if (parentRes.rows.length === 0) return res.status(404).json({ error: "Parent not found" });
+    const parent = parentRes.rows[0];
+
+    // 2. Fetch children details
+    let children = [];
+    if (parent.child_student_ids && parent.child_student_ids.length > 0) {
+      const childrenRes = await db.query(
+        'SELECT first_name, last_name, index_number, grade_level, section FROM students WHERE index_number = ANY($1)',
+        [parent.child_student_ids]
+      );
+      children = childrenRes.rows.map(child => ({
+        name: `${child.first_name} ${child.last_name}`,
+        studentId: child.index_number,
+        class: `${child.grade_level} - ${child.section}`
+      }));
+    }
+
+    // 3. Fetch urgent notices for parents
+    let urgentNotices = [];
+    try {
+      const urgentNoticeRes = await db.query(
+        `SELECT id, title, content, created_at, priority 
+         FROM notices 
+         WHERE school_id = $1 
+         AND priority = 'High' 
+         AND status = 'Published'
+         AND (audience = 'Parents' OR audience = 'Parents and Students' OR audience = 'Teaching Staff, Parents and Students' OR audience = 'All' OR audience = 'All students, parents and teachers')
+         ORDER BY created_at DESC 
+         LIMIT 1`,
+        [parent.school_id]
+      );
+
+      if (urgentNoticeRes.rows.length > 0) {
+        const n = urgentNoticeRes.rows[0];
+        const dateObj = new Date(n.created_at);
+        urgentNotices = [{
+          id: n.id,
+          title: n.title,
+          body: n.content,
+          icon: "alert-circle",
+          time: dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + " at " + dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        }];
+      }
+    } catch (err) {
+      console.error("Failed to fetch urgent notice for parent:", err);
+    }
+
+    // 4. Fetch special events (Latest School News)
+    let specialEvents = [];
+    try {
+      const newsRes = await db.query(
+        `SELECT id, title, event_date, image_url 
+         FROM events 
+         WHERE school_id = $1 
+         AND is_special = true 
+         AND event_date <= (CURRENT_DATE + INTERVAL '1 day')
+         AND event_date >= (CURRENT_DATE - INTERVAL '14 days')
+         ORDER BY event_date DESC 
+         LIMIT 5`,
+        [parent.school_id]
+      );
+
+      specialEvents = newsRes.rows.map(ev => {
+        const d = new Date(ev.event_date);
+        return {
+          id: ev.id,
+          title: ev.title,
+          date: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+          image: ev.image_url || "https://images.unsplash.com/photo-1546410531-bb4caa6b424d?q=80&w=2071&auto=format&fit=crop"
+        };
+      });
+    } catch (err) {
+      console.error("Failed to fetch special events for parent dashboard:", err);
+    }
+
+    res.json({
+      parent: {
+        full_name: parent.full_name,
+        email: parent.email,
+        phone_number: parent.phone_number,
+        profile_photo: parent.profile_photo_url
+      },
+      children,
+      urgentNotices,
+      specialEvents
+    });
+
+  } catch (error) {
+    console.error("Parent Dashboard Error:", error);
+    res.status(500).json({ error: "Server error fetching parent dashboard." });
+  }
+});
 
 // --- START THE SERVER ---
 const PORT = process.env.PORT || 5000;
