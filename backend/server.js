@@ -1,6 +1,5 @@
 const express = require('express');
 const dns = require('node:dns');
-dns.setDefaultResultOrder('ipv4first');
 const cors = require('cors');
 const bcrypt = require('bcryptjs'); 
 const multer = require('multer'); 
@@ -104,39 +103,81 @@ app.delete('/api/school-admin/:email/parents/:parentId', schoolAdminController.d
 
 // --- AUTHENTICATION ROUTES ---
 
-// Smart Cascading Login Route
+// Initialize Database Tables if they don't exist
+const initDB = async () => {
+  try {
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS messages (
+        id SERIAL PRIMARY KEY,
+        sender_email VARCHAR(255) NOT NULL,
+        sender_role VARCHAR(50) NOT NULL,
+        sender_name VARCHAR(255) NOT NULL,
+        receiver_email VARCHAR(255) NOT NULL,
+        receiver_role VARCHAR(50) NOT NULL,
+        content TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        is_read BOOLEAN DEFAULT FALSE
+      )
+    `);
+    console.log("✅ Database tables checked/initialized.");
+  } catch (err) {
+    console.error("Database Init Error:", err);
+  }
+};
+initDB();
+
+// Smart Cascading Login Route - Now with Role Enforcement
 app.post('/api/auth/login', async (req, res) => {
   try {
-    const { email, password } = req.body; 
+    const { email, password, role } = req.body; 
     const cleanEmail = email.toLowerCase().trim();
     
     let user = null;
     let assignedRole = '';
 
-    let result = await db.query('SELECT * FROM super_admins WHERE email = $1', [cleanEmail]);
-    if (result.rows.length > 0) { user = result.rows[0]; assignedRole = 'SuperAdmin'; }
-
-    if (!user) {
-      result = await db.query('SELECT * FROM schools WHERE email = $1', [cleanEmail]);
+    // If role is provided, only check that specific table
+    if (role === 'SuperAdmin') {
+      const result = await db.query('SELECT * FROM super_admins WHERE email = $1', [cleanEmail]);
+      if (result.rows.length > 0) { user = result.rows[0]; assignedRole = 'SuperAdmin'; }
+    } else if (role === 'SchoolAdmin') {
+      const result = await db.query('SELECT * FROM schools WHERE email = $1', [cleanEmail]);
       if (result.rows.length > 0) { user = result.rows[0]; assignedRole = 'SchoolAdmin'; }
-    }
-
-    if (!user) {
-      result = await db.query('SELECT * FROM teachers WHERE email = $1', [cleanEmail]);
+    } else if (role === 'Teacher') {
+      const result = await db.query('SELECT * FROM teachers WHERE email = $1', [cleanEmail]);
       if (result.rows.length > 0) { user = result.rows[0]; assignedRole = 'Teacher'; }
-    }
-
-    if (!user) {
-      result = await db.query('SELECT * FROM parents WHERE email = $1', [cleanEmail]);
+    } else if (role === 'Parent') {
+      const result = await db.query('SELECT * FROM parents WHERE email = $1', [cleanEmail]);
       if (result.rows.length > 0) { user = result.rows[0]; assignedRole = 'Parent'; }
-    }
-
-    if (!user) {
-      result = await db.query('SELECT * FROM students WHERE email = $1', [cleanEmail]);
+    } else if (role === 'Student') {
+      const result = await db.query('SELECT * FROM students WHERE email = $1', [cleanEmail]);
       if (result.rows.length > 0) { user = result.rows[0]; assignedRole = 'Student'; }
+    } else {
+      // Fallback for legacy calls or multi-role discovery
+      let result = await db.query('SELECT * FROM super_admins WHERE email = $1', [cleanEmail]);
+      if (result.rows.length > 0) { user = result.rows[0]; assignedRole = 'SuperAdmin'; }
+
+      if (!user) {
+        result = await db.query('SELECT * FROM schools WHERE email = $1', [cleanEmail]);
+        if (result.rows.length > 0) { user = result.rows[0]; assignedRole = 'SchoolAdmin'; }
+      }
+
+      if (!user) {
+        result = await db.query('SELECT * FROM teachers WHERE email = $1', [cleanEmail]);
+        if (result.rows.length > 0) { user = result.rows[0]; assignedRole = 'Teacher'; }
+      }
+
+      if (!user) {
+        result = await db.query('SELECT * FROM parents WHERE email = $1', [cleanEmail]);
+        if (result.rows.length > 0) { user = result.rows[0]; assignedRole = 'Parent'; }
+      }
+
+      if (!user) {
+        result = await db.query('SELECT * FROM students WHERE email = $1', [cleanEmail]);
+        if (result.rows.length > 0) { user = result.rows[0]; assignedRole = 'Student'; }
+      }
     }
 
-    if (!user) return res.status(400).json({ error: "No account found with this email." });
+    if (!user) return res.status(400).json({ error: `No ${role || 'user'} account found with this email.` });
 
     if (assignedRole === 'SchoolAdmin' && user.status !== 'Active') {
       return res.status(403).json({ error: `Login denied. Your account status is currently: ${user.status}. Please wait for Super Admin approval.` });
@@ -1170,6 +1211,224 @@ app.get('/api/parent/:email/dashboard', async (req, res) => {
   } catch (error) {
     console.error("Parent Dashboard Error:", error);
     res.status(500).json({ error: "Server error fetching parent dashboard." });
+  }
+});
+
+// --- MESSAGING SYSTEM API ---
+
+// Send a message
+app.post('/api/messages/send', async (req, res) => {
+  try {
+    const { sender_email, sender_role, sender_name, receiver_email, receiver_role, content } = req.body;
+    
+    if (!sender_email || !receiver_email || !content) {
+      return res.status(400).json({ error: "Missing required fields" });
+    }
+
+    const result = await db.query(
+      `INSERT INTO messages (sender_email, sender_role, sender_name, receiver_email, receiver_role, content) 
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      [sender_email, sender_role, sender_name, receiver_email, receiver_role, content]
+    );
+
+    res.status(201).json(result.rows[0]);
+  } catch (error) {
+    console.error("Send Message Error:", error);
+    res.status(500).json({ error: "Failed to send message." });
+  }
+});
+
+// Get conversations list (summary) for a user
+app.get('/api/messages/:role/:email', async (req, res) => {
+  try {
+    const { role, email } = req.params;
+    const cleanEmail = email.toLowerCase().trim();
+
+    const result = await db.query(
+      `SELECT DISTINCT ON (other_email)
+         CASE WHEN sender_email = $1 THEN receiver_email ELSE sender_email END as other_email,
+         CASE WHEN sender_email = $1 THEN receiver_role ELSE sender_role END as other_role,
+         CASE WHEN sender_email = $1 THEN 'Me' ELSE sender_name END as last_sender_name,
+         content as snippet,
+         created_at as time,
+         is_read,
+         id
+       FROM messages
+       WHERE sender_email = $1 OR receiver_email = $1
+       ORDER BY other_email, created_at DESC`,
+      [cleanEmail]
+    );
+
+    // Format the time for the frontend
+    const conversations = result.rows.map(row => {
+      const dateObj = new Date(row.time);
+      let timeStr = dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      const now = new Date();
+      if (dateObj.toDateString() === now.toDateString()) {
+        timeStr = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      }
+      
+      return {
+        id: row.id,
+        other_email: row.other_email,
+        other_role: row.other_role,
+        sender: row.last_sender_name,
+        time: timeStr,
+        snippet: row.snippet,
+        unread: !row.is_read && row.other_email === row.other_email // Simple logic for unread
+      };
+    });
+
+    res.json(conversations);
+  } catch (error) {
+    console.error("Fetch Conversations Error:", error);
+    res.status(500).json({ error: "Failed to fetch messages." });
+  }
+});
+
+// Get chat history between two users
+app.get('/api/messages/:role/:email/history/:otherEmail', async (req, res) => {
+  try {
+    const { email, otherEmail } = req.params;
+    const cleanEmail = email.toLowerCase().trim();
+    const cleanOtherEmail = otherEmail.toLowerCase().trim();
+
+    const result = await db.query(
+      `SELECT * FROM messages 
+       WHERE (sender_email = $1 AND receiver_email = $2) 
+          OR (sender_email = $2 AND receiver_email = $1)
+       ORDER BY created_at ASC`,
+      [cleanEmail, cleanOtherEmail]
+    );
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error("Fetch Chat History Error:", error);
+    res.status(500).json({ error: "Failed to fetch chat history." });
+  }
+});
+
+// Mark messages as read
+app.put('/api/messages/read/:messageId', async (req, res) => {
+  try {
+    const { messageId } = req.params;
+    await db.query('UPDATE messages SET is_read = TRUE WHERE id = $1', [messageId]);
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Mark Read Error:", error);
+    res.status(500).json({ error: "Failed to update message status." });
+  }
+});
+
+// Get available contacts for a parent (their children's teachers)
+app.get('/api/parent/:email/contacts', async (req, res) => {
+  try {
+    const { email } = req.params;
+    const cleanEmail = email.toLowerCase().trim();
+
+    // 1. Get the parent and their children's student IDs
+    const parentRes = await db.query('SELECT child_student_ids FROM parents WHERE email = $1', [cleanEmail]);
+    if (parentRes.rows.length === 0) return res.status(404).json({ error: "Parent not found" });
+
+    const studentIds = parentRes.rows[0].child_student_ids;
+    if (!studentIds || studentIds.length === 0) return res.json([]);
+
+    // 2. Get teachers assigned to those students' classes via timetables
+    const result = await db.query(
+      `SELECT DISTINCT t.full_name as name, t.email, t.subject as role, 'teacher' as type
+       FROM teachers t
+       INNER JOIN class_timetables ct ON t.id = ct.teacher_id
+       INNER JOIN classes c ON ct.class_id = c.id
+       INNER JOIN students s ON s.grade_level = c.grade AND s.section = c.section
+       WHERE s.index_number = ANY($1)`,
+      [studentIds]
+    );
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error("Fetch Parent Contacts Error:", error);
+    res.status(500).json({ error: "Failed to fetch contacts." });
+  }
+});
+
+// Get available contacts for a teacher (their students and students' parents)
+app.get('/api/teacher/:email/contacts', async (req, res) => {
+  try {
+    const { email } = req.params;
+    const cleanEmail = email.toLowerCase().trim();
+
+    // 1. Get the teacher's ID
+    const teacherRes = await db.query('SELECT id FROM teachers WHERE email = $1', [cleanEmail]);
+    if (teacherRes.rows.length === 0) return res.status(404).json({ error: "Teacher not found" });
+    const teacherId = teacherRes.rows[0].id;
+
+    // 2. Get students taught by this teacher (via class_timetables)
+    const studentsRes = await db.query(
+      `SELECT DISTINCT s.first_name || ' ' || s.last_name as name, s.email, s.grade_level || ' ' || s.section as role, 'student' as type
+       FROM students s
+       INNER JOIN classes c ON s.grade_level = c.grade AND s.section = c.section
+       INNER JOIN class_timetables ct ON ct.class_id = c.id
+       WHERE ct.teacher_id = $1`,
+      [teacherId]
+    );
+
+    // 3. Get parents of THESE specific students
+    const taughtStudentIds = await db.query(
+      `SELECT DISTINCT s.index_number
+       FROM students s
+       INNER JOIN classes c ON s.grade_level = c.grade AND s.section = c.section
+       INNER JOIN class_timetables ct ON ct.class_id = c.id
+       WHERE ct.teacher_id = $1`,
+      [teacherId]
+    );
+    
+    let parents = [];
+    if (taughtStudentIds.rows.length > 0) {
+      const ids = taughtStudentIds.rows.map(r => r.index_number);
+      const parentsRes = await db.query(
+        `SELECT DISTINCT p.full_name as name, p.email, 'Parent' as role, 'parent' as type
+         FROM parents p
+         WHERE EXISTS (
+           SELECT 1 FROM unnest(p.child_student_ids) as cid 
+           WHERE cid = ANY($1)
+         )`,
+        [ids]
+      );
+      parents = parentsRes.rows;
+    }
+
+    res.json([...studentsRes.rows, ...parents]);
+  } catch (error) {
+    console.error("Fetch Teacher Contacts Error:", error);
+    res.status(500).json({ error: "Failed to fetch contacts." });
+  }
+});
+
+// Get available contacts for a student (their teachers)
+app.get('/api/student/:email/contacts', async (req, res) => {
+  try {
+    const { email } = req.params;
+    const cleanEmail = email.toLowerCase().trim();
+
+    // 1. Get the student's class
+    const studentRes = await db.query('SELECT grade_level, section FROM students WHERE email = $1', [cleanEmail]);
+    if (studentRes.rows.length === 0) return res.status(404).json({ error: "Student not found" });
+    const { grade_level, section } = studentRes.rows[0];
+
+    // 2. Get teachers assigned to this student's class
+    const result = await db.query(
+      `SELECT DISTINCT t.full_name as name, t.email, t.subject as role, 'teacher' as type
+       FROM teachers t
+       INNER JOIN class_timetables ct ON t.id = ct.teacher_id
+       INNER JOIN classes c ON ct.class_id = c.id
+       WHERE c.grade = $1 AND c.section = $2`,
+      [grade_level, section]
+    );
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error("Fetch Student Contacts Error:", error);
+    res.status(500).json({ error: "Failed to fetch contacts." });
   }
 });
 

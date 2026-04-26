@@ -39,13 +39,11 @@ export default function ParentDashboard() {
     specialEvents: []
   });
 
+  const userName = dashboardData.parent.full_name;
+
   const [activeChildId, setActiveChildId] = useState<string | null>(null);
 
-  const [messages, setMessages] = useState([
-    { id: 1, icon: "account-school", sender: "Class Teacher", time: "10:30 AM", snippet: "Please check Arjun's Science project marks...", unread: true },
-    { id: 2, icon: "bank", sender: "Accounts Office", time: "Yesterday", snippet: "Term 3 facility fees receipt is available...", unread: false },
-    { id: 3, icon: "bullhorn", sender: "School Admin", time: "Oct 12", snippet: "Invitation: Annual Founder's Day Dinner", unread: true },
-  ]);
+  const [messages, setMessages] = useState<any[]>([]);
 
   useFocusEffect(
     useCallback(() => {
@@ -69,7 +67,24 @@ export default function ParentDashboard() {
           if (isActive) setIsLoading(false);
         }
       };
+
+      const fetchMessages = async () => {
+        if (!userEmail) return;
+        try {
+          const response = await fetch(`http://172.20.10.7:5000/api/messages/Parent/${userEmail}`);
+          if (response.ok && isActive) {
+            const data = await response.json();
+            // Show only received messages that are unread
+            const receivedUnread = data.filter((m: any) => m.unread && m.sender !== 'Me');
+            setMessages(receivedUnread.slice(0, 3)); 
+          }
+        } catch (error) {
+          console.error("Failed to fetch messages:", error);
+        }
+      };
+
       fetchDashboardData();
+      fetchMessages();
       return () => { isActive = false; };
     }, [userEmail])
   );
@@ -284,26 +299,30 @@ export default function ParentDashboard() {
                 </TouchableOpacity>
               </View>
               <View style={styles.messagesList}>
-                {messages.map((msg: any) => (
-                  <TouchableOpacity 
-                    key={msg.id} 
-                    style={[styles.messageCard, msg.unread && styles.messageCardUnread]} 
-                    onPress={() => handleReadMessage(msg.id)}
-                    activeOpacity={0.7}
-                  >
-                    <View style={styles.messageIconBg}>
-                      <MaterialCommunityIcons name={msg.icon as any} size={20} color="#2563EB" />
-                    </View>
-                    <View style={styles.messageInfo}>
-                      <View style={styles.messageRowOne}>
-                        <Text style={styles.messageSender}>{msg.sender}</Text>
-                        <Text style={styles.messageTimeText}>{msg.time}</Text>
-                        {msg.unread && <View style={styles.unreadDot} />}
+                {messages.length > 0 ? (
+                  messages.map((msg: any) => (
+                    <TouchableOpacity 
+                      key={msg.id} 
+                      style={[styles.messageCard, msg.unread && styles.messageCardUnread]} 
+                      onPress={() => router.push({ pathname: "/(parent-tabs)/parent-messages", params: { ...params, email: userEmail, full_name: userName } as any })}
+                      activeOpacity={0.7}
+                    >
+                      <View style={styles.messageIconBg}>
+                        <MaterialCommunityIcons name={msg.other_role === 'SchoolAdmin' ? "bullhorn" : "account-school"} size={20} color="#2563EB" />
                       </View>
-                      <Text style={[styles.messageSnippet, msg.unread && styles.messageSnippetUnread]} numberOfLines={1}>{msg.snippet}</Text>
-                    </View>
-                  </TouchableOpacity>
-                ))}
+                      <View style={styles.messageInfo}>
+                        <View style={styles.messageRowOne}>
+                          <Text style={styles.messageSender}>{msg.sender}</Text>
+                          <Text style={styles.messageTimeText}>{msg.time}</Text>
+                          {msg.unread && <View style={styles.unreadDot} />}
+                        </View>
+                        <Text style={[styles.messageSnippet, msg.unread && styles.messageSnippetUnread]} numberOfLines={1}>{msg.snippet}</Text>
+                      </View>
+                    </TouchableOpacity>
+                  ))
+                ) : (
+                  <Text style={{ textAlign: 'center', color: '#94A3B8', marginTop: 10 }}>No recent messages</Text>
+                )}
               </View>
 
             </View>

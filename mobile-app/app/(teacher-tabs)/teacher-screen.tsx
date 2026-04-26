@@ -41,6 +41,8 @@ export default function TeacherDashboard() {
   // NEW: State for the Notification Dropdown
   const [isNoticesVisible, setIsNoticesVisible] = useState(false);
 
+  const [messages, setMessages] = useState<any[]>([]);
+
   useFocusEffect(
     useCallback(() => {
       let isActive = true;
@@ -63,7 +65,23 @@ export default function TeacherDashboard() {
         }
       };
 
+      const fetchMessages = async () => {
+        if (!initialEmail) return;
+        try {
+          const response = await fetch(`http://172.20.10.7:5000/api/messages/Teacher/${initialEmail}`);
+          if (response.ok && isActive) {
+            const data = await response.json();
+            // Show only received messages that are unread
+            const receivedUnread = data.filter((m: any) => m.unread && m.sender !== 'Me');
+            setMessages(receivedUnread.slice(0, 3)); 
+          }
+        } catch (error) {
+          console.error("Failed to fetch messages:", error);
+        }
+      };
+
       fetchDashboardData();
+      fetchMessages();
       return () => { isActive = false; };
     }, [initialEmail])
   );
@@ -204,7 +222,42 @@ export default function TeacherDashboard() {
               ))
             )}
 
-            {/* LATEST NEWS SECTION */}
+            {/* RECENT MESSAGES SECTION */}
+            <View style={styles.sectionHeaderNew}>
+              <Text style={styles.sectionTitleNew}>RECENT MESSAGES</Text>
+              <TouchableOpacity onPress={() => router.push({ pathname: "/(teacher-tabs)/teacher-messages", params: getNavParams() as any })}>
+                <Text style={styles.sectionLink}>Read All</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.messagesList}>
+              {messages.length > 0 ? (
+                messages.map((msg: any) => (
+                  <TouchableOpacity 
+                    key={msg.id} 
+                    style={[styles.messageCard, msg.unread && styles.messageCardUnread]} 
+                    onPress={() => router.push({ pathname: "/(teacher-tabs)/teacher-messages", params: getNavParams() as any })}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.messageIconBg}>
+                      <MaterialCommunityIcons name={msg.other_role === 'SchoolAdmin' ? "bullhorn" : "account-school"} size={20} color="#2563EB" />
+                    </View>
+                    <View style={styles.messageInfo}>
+                      <View style={styles.messageRowOne}>
+                        <Text style={styles.messageSender}>{msg.sender}</Text>
+                        <Text style={styles.messageTimeText}>{msg.time}</Text>
+                        {msg.unread && <View style={styles.unreadDot} />}
+                      </View>
+                      <Text style={[styles.messageSnippet, msg.unread && styles.messageSnippetUnread]} numberOfLines={1}>{msg.snippet}</Text>
+                    </View>
+                  </TouchableOpacity>
+                ))
+              ) : (
+                <Text style={{ textAlign: 'center', color: '#94A3B8', marginTop: 10, fontStyle: 'italic' }}>No recent messages</Text>
+              )}
+            </View>
+
+            {/* LATEST SCHOOL NEWS SECTION */}
             <View style={styles.sectionHeaderNew}>
               <Text style={styles.sectionTitleNew}>LATEST SCHOOL NEWS</Text>
               <TouchableOpacity onPress={() => router.push("/(auth)/calendar")}>
@@ -238,9 +291,10 @@ export default function TeacherDashboard() {
         <View style={styles.bottomTabBar}>
           {[ 
             { icon: "home", label: "Home", route: "/(teacher-tabs)/teacher-screen" }, 
+            { icon: "message-square", label: "Messages", route: "/(teacher-tabs)/teacher-messages" }, 
             { icon: "folder", label: "Materials", route: "/(teacher-tabs)/teacher-materials" },
             { icon: "users", label: "Classes", route: null }, 
-            { icon: "calendar", label: "Calendar", route: "/(auth)/calendar", params: { email: initialEmail } }, 
+            { icon: "calendar", label: "Calendar", route: "/(auth)/calendar" }, 
             { icon: "info", label: "About Us", route: "/(auth)/about-us" } 
           ].map((tab, index) => {
             const isActive = index === 0; 
@@ -422,6 +476,19 @@ const styles = StyleSheet.create({
   newsOverlay: { backgroundColor: "rgba(0,0,0,0.5)", padding: 15, borderBottomLeftRadius: 16, borderBottomRightRadius: 16 },
   newsDate: { color: "#E2E8F0", fontSize: 11, fontWeight: "600", marginBottom: 4 },
   newsTitle: { color: "#FFFFFF", fontSize: 16, fontWeight: "bold" },
+
+  // Messages
+  messagesList: { marginBottom: 20 },
+  messageCard: { flexDirection: "row", alignItems: "center", backgroundColor: "#FFFFFF", padding: 15, borderRadius: 16, marginBottom: 10, shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 3, elevation: 1 },
+  messageCardUnread: { backgroundColor: "#F8FAFC", borderLeftWidth: 3, borderLeftColor: "#2563EB" },
+  messageIconBg: { width: 40, height: 40, borderRadius: 20, backgroundColor: "#DBEAFE", justifyContent: "center", alignItems: "center", marginRight: 15 },
+  messageInfo: { flex: 1 },
+  messageRowOne: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 },
+  messageSender: { fontSize: 14, fontWeight: "bold", color: "#1E293B" },
+  messageTimeText: { fontSize: 11, color: "#9CA3AF" },
+  unreadDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: "#2563EB", marginLeft: 5 },
+  messageSnippet: { fontSize: 13, color: "#64748B" },
+  messageSnippetUnread: { color: "#1E293B", fontWeight: "600" },
 
   // Bottom Tab Bar
   bottomTabBar: { flexDirection: "row", justifyContent: "space-around", backgroundColor: "#FFFFFF", paddingVertical: 12, paddingHorizontal: 20, borderTopWidth: 1, borderTopColor: "#E2E8F0", position: "absolute", bottom: 0, left: 0, right: 0 },

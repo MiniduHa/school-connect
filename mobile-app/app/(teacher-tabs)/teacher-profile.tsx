@@ -307,6 +307,8 @@ export default function TeacherProfileScreen() {
         <View style={styles.bottomTabBar}>
           {[ 
             { icon: "home", label: "Home", route: "/(teacher-tabs)/teacher-screen" }, 
+            { icon: "message-square", label: "Messages", route: "/(teacher-tabs)/teacher-messages" }, 
+            { icon: "folder", label: "Materials", route: "/(teacher-tabs)/teacher-materials" },
             { icon: "users", label: "Classes", route: null }, 
             { icon: "calendar", label: "Calendar", route: "/(auth)/calendar" }, 
             { icon: "info", label: "About Us", route: "/(auth)/about-us" } 

@@ -42,6 +42,8 @@ export default function StudentScreen() {
     attendanceStats: { percentage: "0%", status: "Loading...", message: "", present: 0, absent: 0 }
   });
 
+  const [messages, setMessages] = useState<any[]>([]);
+
   // --- FETCH LATEST DATA EVERY TIME SCREEN APPEARS ---
   useFocusEffect(
     useCallback(() => {
@@ -52,27 +54,18 @@ export default function StudentScreen() {
         setIsLoading(true);
         try {
           const timestamp = new Date().getTime();
-          
-          // 1. Fetch Profile Info
           const profileRes = fetch(`http://172.20.10.7:5000/api/profile/${studentId}?t=${timestamp}`);
-          // 2. Fetch Dashboard Widgets Info (Subjects, Grades, Internships)
           const dashboardRes = fetch(`http://172.20.10.7:5000/api/student/${studentId}/dashboard?t=${timestamp}`);
-          
-          // Wait for both API calls to finish
           const [profileResponse, dashboardResponse] = await Promise.all([profileRes, dashboardRes]);
 
           if (profileResponse.ok && dashboardResponse.ok && isActive) {
             const profileData = await profileResponse.json();
             const dashData = await dashboardResponse.json();
-            
-            // Set Profile
             setFirstName(profileData.first_name);
             setLastName(profileData.last_name);
             setEmail(profileData.email);
             setGradeLevel(profileData.grade_level);
             if (profileData.profile_photo_url) setProfilePhoto(profileData.profile_photo_url);
-
-            // Set Dashboard Widgets
             setDashboardData(dashData);
           }
         } catch (error) {
@@ -82,9 +75,25 @@ export default function StudentScreen() {
         }
       };
 
+      const fetchMessages = async () => {
+        if (!email) return;
+        try {
+          const response = await fetch(`http://172.20.10.7:5000/api/messages/Student/${email}`);
+          if (response.ok && isActive) {
+            const data = await response.json();
+            // Show only received messages that are unread
+            const receivedUnread = data.filter((m: any) => m.unread && m.sender !== 'Me');
+            setMessages(receivedUnread.slice(0, 3));
+          }
+        } catch (error) {
+          console.error("Failed to fetch messages:", error);
+        }
+      };
+
       fetchAllData();
+      fetchMessages();
       return () => { isActive = false; };
-    }, [studentId])
+    }, [studentId, email])
   );
 
   // --- UI STATES ---
@@ -201,6 +210,36 @@ export default function StudentScreen() {
             </TouchableOpacity>
           ))}
         </ScrollView>
+
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Recent Messages</Text>
+          <TouchableOpacity onPress={() => router.push({ pathname: "/(student-tabs)/student-messages", params: { email: email, first_name: firstName, last_name: lastName } as any })}><Text style={styles.linkText}>View All</Text></TouchableOpacity>
+        </View>
+
+        <View style={styles.messagesContainer}>
+          {messages.length > 0 ? (
+            messages.map((msg: any) => (
+              <TouchableOpacity 
+                key={msg.id} 
+                style={[styles.messageCard, msg.unread && styles.messageCardUnread]} 
+                onPress={() => router.push({ pathname: "/(student-tabs)/student-messages", params: { email: email, first_name: firstName, last_name: lastName } as any })}
+              >
+                <View style={styles.messageIconBg}>
+                  <MaterialCommunityIcons name={msg.other_role === 'SchoolAdmin' ? "bullhorn" : "account-school"} size={22} color="#2563EB" />
+                </View>
+                <View style={styles.messageInfo}>
+                  <View style={styles.messageRow}>
+                    <Text style={styles.messageSender}>{msg.sender}</Text>
+                    <Text style={styles.messageTime}>{msg.time}</Text>
+                  </View>
+                  <Text style={styles.messageSnippet} numberOfLines={1}>{msg.snippet}</Text>
+                </View>
+              </TouchableOpacity>
+            ))
+          ) : (
+            <Text style={{ textAlign: 'center', color: '#94A3B8', fontStyle: 'italic', marginVertical: 10 }}>No recent messages</Text>
+          )}
+        </View>
 
         <View style={[styles.sectionHeader, { marginTop: 24 }]}>
           <Text style={styles.sectionTitle}>Latest Grades</Text>
@@ -381,6 +420,15 @@ const styles = StyleSheet.create({
   internshipCompany: { fontSize: 12, color: "#64748B", marginBottom: 20 },
   applyButton: { backgroundColor: "#2563EB", paddingVertical: 12, borderRadius: 10, alignItems: "center" },
   applyButtonText: { color: "#FFFFFF", fontWeight: "bold", fontSize: 14 },
+  messagesContainer: { marginBottom: 10 },
+  messageCard: { flexDirection: "row", alignItems: "center", backgroundColor: "#FFFFFF", padding: 16, borderRadius: 16, marginBottom: 12, elevation: 1 },
+  messageCardUnread: { borderLeftWidth: 4, borderLeftColor: "#2563EB" },
+  messageIconBg: { width: 44, height: 44, borderRadius: 12, backgroundColor: "#DBEAFE", justifyContent: "center", alignItems: "center", marginRight: 12 },
+  messageInfo: { flex: 1 },
+  messageRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 },
+  messageSender: { fontSize: 15, fontWeight: "bold", color: "#1E293B" },
+  messageTime: { fontSize: 11, color: "#9CA3AF" },
+  messageSnippet: { fontSize: 13, color: "#64748B" },
   modalContainer: { flex: 1, backgroundColor: "#F8FAFC" },
   modalScrollContent: { padding: 20, paddingBottom: 60 },
   modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 20, paddingTop: Platform.OS === 'ios' ? 50 : 40, paddingBottom: 16, backgroundColor: "#FFFFFF", borderBottomWidth: 1, borderBottomColor: "#E2E8F0" },

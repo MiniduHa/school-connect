@@ -67,64 +67,131 @@ const availableContacts = [
 export default function ParentMessagesScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
+  const userEmail = (params.email as string) || "";
+  const userName = (params.full_name as string) || "Parent";
   
   // --- INBOX STATES ---
-  const [messages, setMessages] = useState(initialMessages);
+  const [messages, setMessages] = useState<any[]>([]);
   const [activeFilter, setActiveFilter] = useState("All"); 
   const [searchQuery, setSearchQuery] = useState("");
   const [isContactModalVisible, setContactModalVisible] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [availableContacts, setAvailableContacts] = useState<any[]>([]);
 
   // --- ACTIVE CHAT STATES ---
-  const [activeChat, setActiveChat] = useState<{name: string, role: string, type: string} | null>(null);
+  const [activeChat, setActiveChat] = useState<{name: string, role: string, type: string, email: string} | null>(null);
   const [messageText, setMessageText] = useState("");
   const [attachedFile, setAttachedFile] = useState<Attachment | null>(null);
-  const [chatHistories, setChatHistories] = useState(initialChatHistories);
+  const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
+  const [isHistoryLoading, setIsHistoryLoading] = useState(false);
 
   const [isAttachMenuVisible, setAttachMenuVisible] = useState(false);
   const [viewingImage, setViewingImage] = useState<string | null>(null);
 
   const scrollViewRef = useRef<ScrollView>(null);
 
-  // --- NEW: SMART HARDWARE BACK BUTTON INTERCEPTION ---
+  // Fetch Conversations
+  const fetchConversations = async () => {
+    if (!userEmail) return;
+    try {
+      const response = await fetch(`http://172.20.10.7:5000/api/messages/Parent/${userEmail}`);
+      if (response.ok) {
+        const data = await response.json();
+        setMessages(data);
+      }
+    } catch (error) {
+      console.error("Fetch Messages Error:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Fetch Available Contacts (Teachers)
+  const fetchContacts = async () => {
+    if (!userEmail) return;
+    try {
+      const response = await fetch(`http://172.20.10.7:5000/api/parent/${userEmail}/contacts`);
+      if (response.ok) {
+        const data = await response.json();
+        setAvailableContacts(data);
+      }
+    } catch (error) {
+      console.error("Fetch Contacts Error:", error);
+    }
+  };
+
+  // Fetch Chat History
+  const fetchChatHistory = async (otherEmail: string) => {
+    if (!userEmail || !otherEmail) return;
+    setIsHistoryLoading(true);
+    try {
+      const response = await fetch(`http://172.20.10.7:5000/api/messages/Parent/${userEmail}/history/${otherEmail}`);
+      if (response.ok) {
+        const data = await response.json();
+        // Format backend data to frontend ChatMessage format
+        const formatted = data.map((m: any) => ({
+          id: m.id,
+          text: m.content,
+          sender: m.sender_email === userEmail ? "me" : "other",
+          time: new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          attachment: null 
+        }));
+        setChatHistory(formatted);
+        
+        // Mark last message as read if it's from others
+        const unreadMsg = data.find((m: any) => !m.is_read && m.receiver_email === userEmail);
+        if (unreadMsg) {
+          fetch(`http://172.20.10.7:5000/api/messages/read/${unreadMsg.id}`, { method: 'PUT' });
+        }
+      }
+    } catch (error) {
+      console.error("Fetch History Error:", error);
+    } finally {
+      setIsHistoryLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchConversations();
+    fetchContacts();
+    
+    // Auto-refresh messages every 10 seconds
+    const interval = setInterval(fetchConversations, 10000);
+    return () => clearInterval(interval);
+  }, [userEmail]);
+
+  // --- SMART HARDWARE BACK BUTTON INTERCEPTION ---
   useEffect(() => {
     const backAction = () => {
-      // If we are looking at a full-screen image, close that first
-      if (viewingImage) {
-        setViewingImage(null);
-        return true; 
-      }
-      
-      // If we are inside a chat, close the chat and return to Inbox
-      if (activeChat) {
-        handleCloseChat();
-        return true; // Tells the OS "I handled the back press, don't leave the screen"
-      }
-      
-      // If we are in the Inbox, let the default behavior happen (go to Home)
+      if (viewingImage) { setViewingImage(null); return true; }
+      if (activeChat) { handleCloseChat(); return true; }
       return false; 
     };
-
-    const backHandler = BackHandler.addEventListener(
-      "hardwareBackPress",
-      backAction
-    );
-
+    const backHandler = BackHandler.addEventListener("hardwareBackPress", backAction);
     return () => backHandler.remove();
-  }, [activeChat, viewingImage]); // Re-run effect when these states change
+  }, [activeChat, viewingImage]);
 
 
   // --- ACTIONS ---
-  const handleOpenChat = (senderName: string, senderRole: string, senderType: string) => {
-    setMessages(messages.map(msg => msg.sender === senderName ? { ...msg, unread: false } : msg));
+  const handleOpenChat = (contact: any) => {
+    setMessages(messages.map(msg => msg.other_email === contact.email ? { ...msg, unread: false } : msg));
     setContactModalVisible(false);
-    setActiveChat({ name: senderName, role: senderRole, type: senderType });
+    setActiveChat({ 
+      name: contact.name || contact.sender || "Unknown", 
+      role: contact.role || contact.other_role || "Staff", 
+      type: contact.type || contact.other_role?.toLowerCase() || "teacher", 
+      email: contact.email || contact.other_email 
+    });
+    fetchChatHistory(contact.email || contact.other_email);
   };
 
   const handleCloseChat = () => {
     setActiveChat(null);
     setMessageText("");
+    setChatHistory([]);
     setAttachedFile(null);
     setAttachMenuVisible(false);
+    fetchConversations(); 
   };
 
   const toggleAttachMenu = () => {
@@ -183,58 +250,53 @@ export default function ParentMessagesScreen() {
     }
   };
 
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
     if ((messageText.trim() === "" && !attachedFile) || !activeChat) return;
     
-    const newMsg: ChatMessage = {
-      id: Date.now(),
-      text: messageText,
-      sender: "me",
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      attachment: attachedFile
+    const payload = {
+      sender_email: userEmail,
+      sender_role: "Parent",
+      sender_name: userName,
+      receiver_email: activeChat.email,
+      receiver_role: activeChat.type === 'teacher' ? 'Teacher' : 'SchoolAdmin',
+      content: messageText
     };
 
-    setChatHistories(prev => ({
-      ...prev,
-      [activeChat.name]: [...(prev[activeChat.name] || []), newMsg]
-    }));
+    try {
+      const response = await fetch(`http://172.20.10.7:5000/api/messages/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
 
-    setMessages(prevMessages => {
-      const existingIndex = prevMessages.findIndex(m => m.sender === activeChat.name);
-      const snippetText = attachedFile ? (attachedFile.type === 'image' ? '📷 Image' : '📄 Document') : messageText;
-      
-      if (existingIndex >= 0) {
-        const updated = [...prevMessages];
-        updated[existingIndex].snippet = snippetText;
-        updated[existingIndex].time = newMsg.time;
-        const [movedItem] = updated.splice(existingIndex, 1);
-        return [movedItem, ...updated];
-      } else {
-        return [{
-          id: Date.now().toString(),
-          sender: activeChat.name,
-          role: activeChat.role,
-          snippet: snippetText,
-          time: newMsg.time,
-          unread: false,
-          type: "teacher"
-        }, ...prevMessages];
+      if (response.ok) {
+        const newMsgFromDb = await response.json();
+        const newMsg: ChatMessage = {
+          id: newMsgFromDb.id,
+          text: messageText,
+          sender: "me",
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          attachment: attachedFile
+        };
+        setChatHistory(prev => [...prev, newMsg]);
+        setMessageText("");
+        setAttachedFile(null);
+        setAttachMenuVisible(false);
       }
-    });
-
-    setMessageText("");
-    setAttachedFile(null);
-    setAttachMenuVisible(false);
+    } catch (error) {
+      Alert.alert("Error", "Failed to send message. Please check your connection.");
+    }
   };
 
   const filteredMessages = messages.filter(msg => {
     const matchesFilter = activeFilter === "All" || (activeFilter === "Unread" && msg.unread);
-    const matchesSearch = msg.sender.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          msg.snippet.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesFilter && matchesSearch;
+    const nameMatch = (msg.sender || "").toLowerCase().includes(searchQuery.toLowerCase());
+    const emailMatch = (msg.other_email || "").toLowerCase().includes(searchQuery.toLowerCase());
+    const snippetMatch = (msg.snippet || "").toLowerCase().includes(searchQuery.toLowerCase());
+    return matchesFilter && (nameMatch || emailMatch || snippetMatch);
   });
 
-  const currentChatLog = activeChat ? (chatHistories[activeChat.name] || []) : [];
+  const currentChatLog = chatHistory;
 
   const renderBottomTabBar = () => (
     <View style={styles.bottomTabBar}>

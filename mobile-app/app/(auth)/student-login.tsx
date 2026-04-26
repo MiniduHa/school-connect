@@ -37,7 +37,11 @@ export default function StudentLoginScreen() {
       const response = await fetch(API_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.toLowerCase().trim(), password: password }),
+        body: JSON.stringify({ 
+          email: email.toLowerCase().trim(), 
+          password: password,
+          role: "Student" 
+        }),
       });
       const data = await response.json();
       if (response.ok) {

@@ -32,7 +32,16 @@ export default function TabsLayout() {
         }}
       />
 
-      {/* 2. GRADES TAB */}
+      {/* 2. MESSAGES TAB */}
+      <Tabs.Screen
+        name="student-messages"
+        options={{
+          title: "MESSAGES",
+          tabBarIcon: ({ color }) => <FontAwesome6 name="message" size={20} color={color} />,
+        }}
+      />
+
+      {/* 3. GRADES TAB */}
       <Tabs.Screen
         name="grades"
         options={{
@@ -41,21 +50,12 @@ export default function TabsLayout() {
         }}
       />
 
-      {/* 3. CALENDAR TAB */}
+      {/* 4. CALENDAR TAB */}
       <Tabs.Screen
         name="calendar"
         options={{
-          title: "Calendar", // Note: Your mockup has lowercase 'alendar' here
+          title: "CALENDAR",
           tabBarIcon: ({ color }) => <FontAwesome6 name="calendar" size={20} color={color} />,
-        }}
-      />
-
-      {/* 4. JOBS TAB */}
-      <Tabs.Screen
-        name="jobs"
-        options={{
-          title: "Jobs",
-          tabBarIcon: ({ color }) => <FontAwesome6 name="briefcase" size={20} color={color} />,
         }}
       />
 
