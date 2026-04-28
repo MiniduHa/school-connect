@@ -6,7 +6,7 @@ export default function PlatformSettings() {
       
       <div>
         <h1 className="text-2xl font-bold text-slate-800">Platform Settings</h1>
-        <p className="text-slate-500">Manage global configurations for the School Connect ecosystem.</p>
+        <p className="text-slate-500">Manage global configurations for the SisuLink ecosystem.</p>
       </div>
 
       {/* Security Settings */}

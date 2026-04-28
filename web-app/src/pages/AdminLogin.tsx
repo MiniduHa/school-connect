@@ -26,7 +26,7 @@ export default function AdminLogin() {
 
       if (response.ok) {
         // Save user data to localStorage
-        localStorage.setItem('schoolConnectUser', JSON.stringify(data.user || data.student));
+        localStorage.setItem('sisuLinkUser', JSON.stringify(data.user || data.student));
 
         // The backend tells us what role they are, so we route them accordingly
         const userRole = data.user?.role || data.student?.role;
@@ -57,7 +57,7 @@ export default function AdminLogin() {
         <div className="bg-white/20 p-6 rounded-2xl mb-6">
           <GraduationCap size={56} color="#FFFFFF" />
         </div>
-        <h1 className="text-4xl font-bold mb-2">School Connect</h1>
+        <h1 className="text-4xl font-bold mb-2">SisuLink</h1>
         <p className="text-blue-100 text-lg">Unified Education Management System</p>
       </div>
 

@@ -87,7 +87,7 @@ export default function TeacherLoginScreen() {
               <View style={styles.logoContainer}>
                 <FontAwesome6 name="graduation-cap" size={36} color="#FFFFFF" />
               </View>
-              <Text style={styles.appName}>School Connect</Text>
+              <Text style={styles.appName}>SisuLink</Text>
               <Text style={styles.tagline}>Teacher Portal</Text>
             </View>
 

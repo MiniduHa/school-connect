@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "mobile-app",
-    "slug": "mobile-app",
+    "name": "SisuLink",
+    "slug": "sisulink",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "mobileapp",
+    "scheme": "sisulink",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {

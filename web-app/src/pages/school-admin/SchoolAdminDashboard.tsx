@@ -21,7 +21,7 @@ export default function SchoolAdminDashboard() {
 
   // Fetch data on load
   useEffect(() => {
-    const storedUser = localStorage.getItem('schoolConnectUser');
+    const storedUser = localStorage.getItem('sisuLinkUser');
     if (storedUser) {
       const parsedUser = JSON.parse(storedUser);
       setAdminData(parsedUser);

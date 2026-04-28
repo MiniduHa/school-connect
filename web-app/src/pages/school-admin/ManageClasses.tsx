@@ -48,7 +48,7 @@ export default function ManageClasses() {
   const [formData, setFormData] = useState({ grade: 'Grade 10', section: '', classTeacherId: '', roomNumber: '', capacity: 40 });
 
   useEffect(() => {
-    const storedUser = localStorage.getItem('schoolConnectUser');
+    const storedUser = localStorage.getItem('sisuLinkUser');
     if (storedUser) {
       const parsedUser = JSON.parse(storedUser);
       setAdminEmail(parsedUser.email);

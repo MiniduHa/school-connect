@@ -44,7 +44,7 @@ export default function SelectionScreen() {
     <ScrollView contentContainerStyle={styles.container}>
       <View style={styles.headerRow}>
         <FontAwesome6 name="graduation-cap" size={60} color="#2B8CEE" style={{ marginRight: 12 }} />
-        <Text style={styles.appName}>School Connect</Text>
+        <Text style={styles.appName}>SisuLink</Text>
       </View>
 
       <Text style={styles.subHeading}>Welcome!</Text>

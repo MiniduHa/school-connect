@@ -45,10 +45,10 @@ export default function ChildDetailsScreen() {
 
   // NEW: Mock Teacher Data
   const teachersList = [
-    { id: "t1", name: "Mrs. N. Silva", role: "Class Teacher & Science", email: "n.silva@schoolconnect.lk", phone: "+94 71 234 5678" },
-    { id: "t2", name: "Mr. K. Perera", role: "Mathematics", email: "k.perera@schoolconnect.lk", phone: "+94 77 987 6543" },
-    { id: "t3", name: "Ms. E. Fernando", role: "English", email: "e.fernando@schoolconnect.lk", phone: "+94 70 555 4444" },
-    { id: "t4", name: "Mr. S. Bandara", role: "History", email: "s.bandara@schoolconnect.lk", phone: "+94 78 111 2222" }
+    { id: "t1", name: "Mrs. N. Silva", role: "Class Teacher & Science", email: "n.silva@sisulink.lk", phone: "+94 71 234 5678" },
+    { id: "t2", name: "Mr. K. Perera", role: "Mathematics", email: "k.perera@sisulink.lk", phone: "+94 77 987 6543" },
+    { id: "t3", name: "Ms. E. Fernando", role: "English", email: "e.fernando@sisulink.lk", phone: "+94 70 555 4444" },
+    { id: "t4", name: "Mr. S. Bandara", role: "History", email: "s.bandara@sisulink.lk", phone: "+94 78 111 2222" }
   ];
 
   const timetable: Record<string, { time: string, subject: string, teacher: string }[]> = {

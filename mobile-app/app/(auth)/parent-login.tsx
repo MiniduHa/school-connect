@@ -89,7 +89,7 @@ export default function ParentLoginScreen() {
               <View style={styles.logoContainer}>
                 <FontAwesome6 name="graduation-cap" size={36} color="#FFFFFF" />
               </View>
-              <Text style={styles.appName}>School Connect</Text>
+              <Text style={styles.appName}>SisuLink</Text>
               <Text style={styles.tagline}>Connecting Education, Empowering Futures</Text>
             </View>
 

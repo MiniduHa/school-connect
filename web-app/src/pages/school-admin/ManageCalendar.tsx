@@ -36,7 +36,7 @@ export default function ManageCalendar() {
   });
 
   useEffect(() => {
-    const storedUser = localStorage.getItem('schoolConnectUser');
+    const storedUser = localStorage.getItem('sisuLinkUser');
     if (storedUser) {
       const parsedUser = JSON.parse(storedUser);
       setAdminEmail(parsedUser.email);

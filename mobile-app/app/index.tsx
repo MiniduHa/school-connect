@@ -31,7 +31,7 @@ export default function LoadingScreen() {
       {/* Centered Logo & Text */}
       <View style={styles.centerContent}>
         <FontAwesome6 name="graduation-cap" size={90} color="#2B8CEE" style={{ marginBottom: 20 }} />
-        <Text style={styles.appName}>School Connect</Text>
+        <Text style={styles.appName}>SisuLink</Text>
         <Text style={styles.subHeading}>Empowering education through collaboration</Text>
       </View>
 

@@ -33,7 +33,7 @@ export default function ManageParents() {
   const [formData, setFormData] = useState({ fullName: '', parentEmail: '', phone: '', childStudentIds: '', status: 'Active', password: '' });
 
   useEffect(() => {
-    const storedUser = localStorage.getItem('schoolConnectUser');
+    const storedUser = localStorage.getItem('sisuLinkUser');
     if (storedUser) {
       const parsedUser = JSON.parse(storedUser);
       setAdminEmail(parsedUser.email);

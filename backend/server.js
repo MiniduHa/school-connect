@@ -320,10 +320,10 @@ app.post('/api/auth/forgot-password', async (req, res) => {
     });
 
     const mailOptions = {
-      from: 'School Connect <no-reply@schoolconnect.com>',
+      from: 'SisuLink <no-reply@sisulink.com>',
       to: cleanEmail,
       subject: 'Your Password Reset Code',
-      text: `Your password reset code is: ${otp}. It will expire in 15 minutes.`
+      text: `Welcome to SisuLink! Your password reset code is: ${otp}. It will expire in 15 minutes.`
     };
 
     try {

@@ -29,7 +29,7 @@ export default function ParentProfileScreen() {
 
   // --- DYNAMIC DATA ---
   const initialName = (params.full_name as string) || "Parent User";
-  const initialEmail = (params.email as string) || "parent@schoolconnect.com";
+  const initialEmail = (params.email as string) || "parent@sisulink.com";
   const initialPhone = (params.phone_number as string) || "+94 77 123 4567";
   const child_ids = params.child_ids as string;
   const profile_photo_url = params.profile_photo_url as string;

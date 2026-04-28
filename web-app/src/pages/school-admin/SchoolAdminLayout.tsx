@@ -53,7 +53,7 @@ export default function SchoolAdminLayout() {
   });
 
   useEffect(() => {
-    const storedUser = localStorage.getItem('schoolConnectUser');
+    const storedUser = localStorage.getItem('sisuLinkUser');
     if (storedUser) {
       const parsed = JSON.parse(storedUser);
       setAdminData(parsed);
@@ -153,7 +153,7 @@ export default function SchoolAdminLayout() {
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('schoolConnectUser');
+    localStorage.removeItem('sisuLinkUser');
     navigate('/login');
   };
 
@@ -200,7 +200,7 @@ export default function SchoolAdminLayout() {
           
           <div className="overflow-hidden flex-1">
             <span className="text-lg font-bold tracking-wide truncate block w-full text-white" title={adminData?.school_name}>
-              {adminData?.school_name || 'School Portal'}
+              {adminData?.school_name || 'SisuLink Portal'}
             </span>
             <span className="text-xs text-blue-400 font-medium block">
               Admin Portal
